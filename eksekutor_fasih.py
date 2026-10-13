@@ -283,10 +283,21 @@ def selesaikan_sso_pada_fasih(page, selancar_page=None, link_btn=None, max_wait_
 
             # 2. KONDISI: Berada di halaman Selamat Datang Kembali (FASIH /app/)
             btn_sso = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")')
-            if btn_sso.count() > 0 and btn_sso.first.is_visible():
-                print("[SSO] Mengklik tombol 'Lanjutkan dengan SSO'...")
-                btn_sso.first.click()
-                time.sleep(3)
+            is_login_screen = (btn_sso.count() > 0 and btn_sso.first.is_visible()) or page.locator('text="Selamat Datang Kembali"').count() > 0
+            if is_login_screen:
+                print("[SSO] Terdeteksi halaman login 'Selamat Datang Kembali'. Mengklik tombol 'Lanjutkan dengan SSO'...")
+                btn_sso_click = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")').filter(has_not_text="Eksternal")
+                if btn_sso_click.count() > 0 and btn_sso_click.first.is_visible():
+                    btn_sso_click.first.click()
+                elif btn_sso.count() > 0:
+                    btn_sso.first.click()
+                time.sleep(2.5)
+                try:
+                    page.wait_for_load_state("domcontentloaded", timeout=10000)
+                except Exception:
+                    pass
+                time.sleep(1)
+
                 # Jika setelah klik SSO langsung kembali ke /app/ karena sudah punya sesi
                 if "sso.bps.go.id" not in page.url.lower() and "assignment" not in page.url.lower():
                     btn_sso_cek = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")')
@@ -297,13 +308,15 @@ def selesaikan_sso_pada_fasih(page, selancar_page=None, link_btn=None, max_wait_
                             return True, None
                 continue
 
-            # 3. KONDISI: Sudah di assignment
-            if "assignment" in url:
+            # 3. KONDISI: Sudah di assignment dan BUKAN di login screen
+            btn_sso_cek = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")')
+            is_login = (btn_sso_cek.count() > 0 and btn_sso_cek.first.is_visible()) or page.locator('text="Selamat Datang Kembali"').count() > 0
+            if "assignment" in url and not is_login and "sso.bps.go.id" not in url:
                 return True, None
 
             # 4. KONDISI: Berada di FASIH awal / Dashboard (/app/) setelah login (bukan assignment)
             if "fasih-sm.bps.go.id" in url and "assignment" not in url:
-                if btn_sso.count() == 0 or not btn_sso.first.is_visible():
+                if not is_login and page.locator('text="Loading Page..."').count() == 0:
                     print("[FASIH] Terdeteksi berada di halaman awal FASIH (/app/ dashboard) dan bukan di assignment.")
                     ulang_sukses = ulang_buka_assignment_dari_selancar(page, selancar_page, link_btn)
                     if ulang_sukses:
@@ -326,7 +339,7 @@ def selesaikan_sso_dan_buka_target(page, target_link):
             pass
     return True
 
-def wait_fasih_ready(page, timeout=25):
+def wait_fasih_ready(page, selancar_page=None, link_btn=None, timeout=30):
     """
     Menunggu FASIH selesai memuat sampai kuesioner siap di layar.
     Langsung return READY begitu salah satu kondisi terpenuhi:
@@ -347,10 +360,26 @@ def wait_fasih_ready(page, timeout=25):
             if is_waf:
                 return "WAF", bot_code
 
-            # 2. Cek apakah di SSO
-            if "sso.bps.go.id" in page.url.lower():
-                time.sleep(1)
+            # 2. Cek apakah di SSO atau layar 'Selamat Datang Kembali' / 'Lanjutkan dengan SSO'
+            btn_sso = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")')
+            is_login_screen = (btn_sso.count() > 0 and btn_sso.first.is_visible()) or page.locator('text="Selamat Datang Kembali"').count() > 0
+            if is_login_screen or "sso.bps.go.id" in page.url.lower():
+                print("[FASIH] Terdeteksi layar login SSO / 'Lanjutkan dengan SSO'. Menyelesaikan SSO...")
+                sso_res, sso_bot = selesaikan_sso_pada_fasih(page, selancar_page=selancar_page, link_btn=link_btn)
+                if sso_res == "WAF":
+                    return "WAF", sso_bot
+                elif sso_res == "SSO_LIMIT_EXCEEDED":
+                    return "SSO_LIMIT_EXCEEDED", None
+                start = time.time()
                 continue
+
+            # 2b. Cek jika mendarat di Dashboard (/app/) bukan assignment dan bukan loading
+            if "fasih-sm.bps.go.id" in page.url.lower() and "assignment" not in page.url.lower():
+                if page.locator('text="Loading Page..."').count() == 0 and not is_login_screen:
+                    print("[FASIH] Halaman berada di dashboard (/app/) bukan assignment. Membuka ulang assignment...")
+                    ulang_buka_assignment_dari_selancar(page, selancar_page=selancar_page, link_btn=link_btn)
+                    start = time.time()
+                    continue
 
             # 3. Cek error FASIH biasa (Forbidden / 403 biasa)
             if cek_fasih_error(page):
@@ -1126,7 +1155,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         elif sso_res == "SSO_LIMIT_EXCEEDED":
             return "SSO_LIMIT_EXCEEDED", None
 
-        ready_res, ready_bot = wait_fasih_ready(page)
+        ready_res, ready_bot = wait_fasih_ready(page, selancar_page=sel_pg, link_btn=l_btn)
         if ready_res == "WAF":
             return handle_waf_block(page, row, ready_bot)
         elif ready_res in ["ERROR", "TIMEOUT", "CLOSED"] or cek_fasih_error(page):
@@ -1144,8 +1173,8 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         if is_waf:
             return handle_waf_block(page, row, bot_code)
 
-        # JEDA ACAK 1-3 detik setelah revoke
-        time.sleep(random.uniform(1.0, 3.0))
+        # JEDA SINGKAT 0.5 detik setelah revoke
+        time.sleep(0.5)
 
         # 3. Buka Blok II
         buka_blok_ii(page, nama)
@@ -1171,8 +1200,8 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             ok_pbj, c_pbj = cari_dan_isi_field(page, "barang dan jasa", pbj_baru)
             if ok_pbj: c_pbj_found = c_pbj
 
-        # JEDA ACAK 1-3 detik setelah isi nilai
-        time.sleep(random.uniform(1.0, 3.0))
+        # JEDA SINGKAT 0.5 detik setelah isi nilai
+        time.sleep(0.5)
 
         # 6. Tambah Catatan jika diaktifkan (WAJIB DI ISIAN 27a)
         if isi_catatan and kode_catatan:
@@ -1207,8 +1236,8 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
                     print("[INFO] Dibatalkan oleh reviewer.")
                     return "CANCELLED", None
 
-        # JEDA ACAK 1-3 detik sebelum Kirim / Finalisasi
-        time.sleep(random.uniform(1.0, 3.0))
+        # JEDA SINGKAT 0.5 detik sebelum Kirim / Finalisasi
+        time.sleep(0.5)
 
         # 9. Submit atau Dry-run
         if dry_run:
@@ -1344,8 +1373,8 @@ def main():
     print("\nPilih Mode Operasi:")
     print("  [1] Uji 1 Baris Pertama - DRY-RUN (Isi form tapi TIDAK submit, konfirmasi manual)")
     print("  [2] Uji 1 Baris Pertama - SUBMIT SUNGGUHAN (Kirim ke server FASIH)")
-    print("  [3] Eksekusi Batch DRY-RUN (Batas 1-10 baris, tanpa submit)")
-    print("  [4] Eksekusi Batch SUBMIT SUNGGUHAN (Batas 1-10 baris, submit)")
+    print("  [3] Eksekusi Batch DRY-RUN (Batas 1-25 baris, tanpa submit)")
+    print("  [4] Eksekusi Batch SUBMIT SUNGGUHAN (Batas 1-25 baris, submit)")
     
     pilihan = input("\nMasukkan pilihan [1/2/3/4] (default 1): ").strip() or "1"
     
@@ -1364,13 +1393,13 @@ def main():
     elif pilihan == "3":
         dry_run = True
         interaktif = False
-        limit_str = input(f"Berapa jumlah baris batch dry-run? (1-10, default 5, maks 10): ").strip() or "5"
-        limit = max(1, min(int(limit_str), 10))
+        limit_str = input(f"Berapa jumlah baris batch dry-run? (1-25, default 10, maks 25): ").strip() or "10"
+        limit = max(1, min(int(limit_str), 25))
     elif pilihan == "4":
         dry_run = False
         interaktif = False
-        limit_str = input(f"Berapa jumlah baris batch submit? (1-10, default 5, maks 10): ").strip() or "5"
-        limit = max(1, min(int(limit_str), 10))
+        limit_str = input(f"Berapa jumlah baris batch submit? (1-25, default 10, maks 25): ").strip() or "10"
+        limit = max(1, min(int(limit_str), 25))
 
     tanya_catatan = False
     if pilihan in ["1", "3"]:
@@ -1459,6 +1488,13 @@ def main():
                 gagal += 1
                 continue
 
+            # Tunggu halaman FASIH selesai initial load/redirect
+            try:
+                fasih_page.wait_for_load_state("domcontentloaded", timeout=15000)
+            except Exception:
+                pass
+            time.sleep(1.5)
+
             # 4. Eksekusi form di tab FASIH
             hasil, info = eksekusi_baris(
                 fasih_page, 
@@ -1498,14 +1534,14 @@ def main():
             elif hasil in ["APPLIED", "SUBMITTED"]:
                 sukses += 1
                 if sukses < limit:
-                    # JEDA DIPERPANJANG: 20-45 detik acak antar assignment untuk menurunkan beban WAF
-                    jeda = random.uniform(20.0, 45.0)
-                    print(f"[JEDA] Menunggu {jeda:.1f} detik sebelum assignment berikutnya (menurunkan beban WAF)...")
+                    # JEDA WAJAR: 4-7 detik acak antar assignment
+                    jeda = random.uniform(4.0, 7.0)
+                    print(f"[JEDA] Menunggu {jeda:.1f} detik sebelum assignment berikutnya...")
                     time.sleep(jeda)
             elif hasil in ["SKIPPED_FASIH_ERROR", "KBLI_MISMATCH"]:
                 di_skip += 1
                 print("[INFO] Assignment FASIH dilewati. Otomatis NEXT ke baris berikutnya...")
-                time.sleep(random.uniform(5.0, 10.0))
+                time.sleep(random.uniform(1.5, 3.0))
             elif hasil == "CANCELLED":
                 print("[INFO] Eksekusi dihentikan oleh reviewer.")
                 break
@@ -1521,7 +1557,7 @@ def main():
         print(f"Gagal/Batal     : {gagal}")
         print(f"Berhenti WAF    : {'YA (' + waf_bot_code + ')' if waf_terdeteksi else 'TIDAK'}")
         if sukses >= limit and limit > 1 and not waf_terdeteksi:
-            print("[INFO] Batch 1 sesi selesai (maksimal 10 baris). Silakan jalankan lagi nanti.")
+            print(f"[INFO] Batch 1 sesi selesai (target {limit} baris terpenuhi). Silakan jalankan lagi nanti.")
         print("=" * 65)
 
 if __name__ == "__main__":
