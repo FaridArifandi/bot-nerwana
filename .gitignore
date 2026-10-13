@@ -1,0 +1,42 @@
+# Kredensial & Informasi Sensitif
+sso
+.env
+*.env
+
+# Data Responden & Spreadsheet
+*.xlsx
+*.xls
+*.db
+*.sqlite
+*.sqlite3
+data_cleaning.db
+review_usulan.xlsx
+
+# File Dump HTML Scraping / Recon
+recon_*.html
+recon_*_files/
+fasih_login_sample.html
+
+# Chrome User Profile & Sesi Browser
+chrome_debug_profile/
+chrome_profile/
+browser_data/
+
+# Lock files, Screenshots & Temporary
+.waf_lock
+screenshots/
+scratch/
+*.bak
+*.log
+
+# Python Cache & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+
+# Editor / IDE Settings
+.vscode/
+.idea/
