@@ -9,8 +9,9 @@ sso
 *.db
 *.sqlite
 *.sqlite3
-data_cleaning.db
-review_usulan.xlsx
+# Database & Review usulan untuk sinkronisasi tim
+!data_cleaning.db
+!review_usulan.xlsx
 
 # File Dump HTML Scraping / Recon
 recon_*.html

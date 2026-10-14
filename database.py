@@ -8,10 +8,11 @@ DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cleanin
 def get_connection():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    init_db(conn)
     return conn
 
-def init_db():
-    conn = get_connection()
+def init_db(existing_conn=None):
+    conn = existing_conn or sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Tabel Utama: kasus_nerwana

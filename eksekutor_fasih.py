@@ -1387,6 +1387,10 @@ def main():
     conn.close()
 
     print(f"\n[STATUS] Database lokal memiliki {approved_count} baris APPROVED tersimpan.")
+    if approved_count == 0:
+        print("[PERINGATAN] Belum ada data berstatus 'APPROVED' di database lokal!")
+        print("             Pastikan file 'review_usulan.xlsx' ada di folder bot dan")
+        print("             kolom 'Approved (Y/N)' sudah diisi 'Y' agar dapat dieksekusi.")
     print("         Mode LIVE ON-THE-FLY aktif: Bot memeriksa langsung baris di tabel Selancar")
     print("         secara urut di layar (tanpa scraping awal & tanpa lompat-lompat).")
 
