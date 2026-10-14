@@ -6,13 +6,14 @@ from datetime import datetime
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cleaning.db")
 
 def get_connection():
+    if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
+        init_db()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
-    init_db(conn)
     return conn
 
-def init_db(existing_conn=None):
-    conn = existing_conn or sqlite3.connect(DB_PATH)
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Tabel Utama: kasus_nerwana
