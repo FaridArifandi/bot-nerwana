@@ -843,15 +843,18 @@ def tambah_catatan_field(page, container, kode_catatan):
             page.keyboard.type(kode_catatan, delay=random.randint(60, 140))
             time.sleep(0.5)
             
-            btn_simpan = dialog.locator('button:has-text("Simpan"), button[title="Simpan"]').first
-            if btn_simpan.count() > 0 and btn_simpan.is_visible():
-                btn_simpan.click(timeout=3000)
-                time.sleep(1)
-                print(f"[FASIH] Catatan '{kode_catatan}' tersimpan.")
+            # Cari tombol kirim (ikon pesawat / svg di samping textarea) atau tekan Enter
+            btn_send = dialog.locator('button:has(svg), button[title*="Kirim"], button:has-text("Kirim"), button:has-text("Simpan")').last
+            if btn_send.count() > 0 and btn_send.is_visible():
+                btn_send.click(timeout=3000)
+            else:
+                page.keyboard.press("Enter")
+            time.sleep(1)
+            print(f"[FASIH] Catatan '{kode_catatan}' tersimpan.")
                 
-            btn_close = dialog.locator('button[title="Dismiss"], button:has-text("Close")')
-            if btn_close.count() > 0 and btn_close.first.is_visible():
-                btn_close.first.click()
+            btn_close = dialog.locator('button:has-text("✕"), button:has-text("×"), button[aria-label="Close"], button[title="Dismiss"]').first
+            if btn_close.count() > 0 and btn_close.is_visible():
+                btn_close.click()
             else:
                 page.keyboard.press("Escape")
             time.sleep(1)
@@ -903,23 +906,29 @@ def cek_catatan_eksisting_27a(page, container=None):
         if dialog.count() == 0 or not dialog.is_visible():
             return False, ""
 
-        textarea = dialog.locator('textarea')
-        isi = ""
-        if textarea.count() > 0 and textarea.first.is_visible():
-            isi = (textarea.first.input_value() or "").strip()
+        # KUNCI UTAMA: Baca seluruh teks di dalam modal dialog!
+        # Riwayat chat catatan tersimpan di bubble teks dialog, BUKAN di input textarea.
+        dialog_text = dialog.inner_text().strip()
 
         # Tutup dialog catatan
-        btn_close = dialog.locator('button[title="Dismiss"], button:has-text("Close"), button:has-text("Batal"), button:has-text("Tutup")')
-        if btn_close.count() > 0 and btn_close.first.is_visible():
-            btn_close.first.click()
-        else:
+        try:
+            btn_close = dialog.locator('button:has-text("✕"), button:has-text("×"), button[aria-label="Close"], button.close, button:has(svg)').first
+            if btn_close.count() > 0 and btn_close.is_visible():
+                btn_close.click()
+            else:
+                page.keyboard.press("Escape")
+        except Exception:
             page.keyboard.press("Escape")
         time.sleep(0.5)
 
-        # Periksa apakah ada pola DC (misal: #DC_01, DC_01, #DC, dll)
-        if "DC" in isi.upper():
-            return True, isi
-        return False, isi
+        # Periksa apakah ada riwayat catatan mengandung 'DC' (misal: #DC_01, DC_01, #DC)
+        import re
+        match = re.search(r'#?DC[_\s]*0?[1-9]?', dialog_text, re.I)
+        if match or "#DC" in dialog_text.upper() or "DC_01" in dialog_text.upper() or "DC01" in dialog_text.upper():
+            found_tag = match.group(0) if match else "#DC_01"
+            return True, found_tag
+
+        return False, ""
     except Exception as e:
         print(f"[INFO] Pengecekan catatan eksisting 27a: {e}")
         try:
