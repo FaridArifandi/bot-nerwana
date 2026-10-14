@@ -17,6 +17,30 @@ SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
 
 os.makedirs(SCREENSHOTS_DIR, exist_ok=True)
 
+def cleanup_old_screenshots(max_keep=30):
+    """
+    Menjaga folder screenshots agar tidak membengkak:
+    Hanya mempertahankan sejumlah `max_keep` file screenshot terbaru,
+    dan menghapus file screenshot lama secara otomatis.
+    """
+    try:
+        files = [
+            os.path.join(SCREENSHOTS_DIR, f)
+            for f in os.listdir(SCREENSHOTS_DIR)
+            if f.lower().endswith(".png")
+        ]
+        if len(files) > max_keep:
+            files.sort(key=lambda p: os.path.getmtime(p))
+            to_remove = files[:len(files) - max_keep]
+            for fpath in to_remove:
+                try:
+                    os.remove(fpath)
+                except Exception:
+                    pass
+            print(f"[CLEANUP] Otomatis membersihkan {len(to_remove)} screenshot lama (menyimpan {max_keep} terbaru).")
+    except Exception:
+        pass
+
 def is_port_open(port=9222):
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         return s.connect_ex(('127.0.0.1', port)) == 0
@@ -679,24 +703,33 @@ def buka_blok_ii(page, nama_usaha=""):
                 card_usaha.first.click()
                 time.sleep(2)
 
-def cek_kbli_kategori_a(page):
-    """Cek apakah kategori usaha adalah Kategori A (Pertanian)."""
+def cek_kbli_kategori(page, kategori_target="G"):
+    """
+    Cek apakah kategori usaha sesuai dengan kategori target di FASIH:
+    - Kategori G (Perdagangan): Kategori Lapangan Usaha 'G', KBLI berawalan 45, 46, 47.
+    - Kategori A (Pertanian): Kategori Lapangan Usaha 'A', KBLI berawalan 01, 02, 03.
+    """
+    target = (kategori_target or "G").upper().strip()
     kategori_container = page.locator('div:has-text("13. h. Kategori Lapangan Usaha")').last
     if kategori_container.count() > 0:
         inp = kategori_container.locator('input')
         if inp.count() > 0:
             val = inp.input_value().strip().upper()
             if val:
-                return val == "A"
+                return val == target
         txt = kategori_container.inner_text().upper()
-        if "KATEGORI: A" in txt or " A " in txt:
+        if f"KATEGORI: {target}" in txt or f" {target} " in txt:
             return True
 
     kbli_container = page.locator('div:has-text("13. g. Kode KBLI")').last
     if kbli_container.count() > 0:
-        txt_kbli = kbli_container.inner_text()
-        if any(txt_kbli.strip().startswith(prefix) for prefix in ["01", "02", "03"]):
-            return True
+        txt_kbli = kbli_container.inner_text().strip()
+        if target == "A":
+            if any(txt_kbli.startswith(prefix) for prefix in ["01", "02", "03"]):
+                return True
+        elif target == "G":
+            if any(txt_kbli.startswith(prefix) for prefix in ["45", "46", "47"]):
+                return True
 
     return True
 
@@ -1120,17 +1153,17 @@ def handle_waf_block(page, row, bot_code):
         conn.close()
     return "WAF_BLOCK", bot_code
 
-def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False, nerwana_updater=None, target_info=None):
+def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False, nerwana_updater=None, target_info=None, kategori="G"):
     aid = row['assignment_id']
     nama = row['nama_usaha']
     
     pbj_baru = row['nilai_baru_pbj']
     prod_baru = row['nilai_baru_prod']
     ops_baru = row['nilai_baru_ops']
-    kode_catatan = row['kode_catatan'] or ""
+    kode_catatan = row['kode_catatan'] or "#DC_01"
     
     print("\n" + "=" * 65)
-    print(f"EKSEKUSI ASSIGNMENT: {aid}")
+    print(f"EKSEKUSI ASSIGNMENT: {aid} (KATEGORI {kategori})")
     print(f"Nama Usaha  : {nama}")
     print(f"PBJ Baru    : {pbj_baru:,.0f} (Lama: {row['pbj']:,.0f})")
     print(f"Prod Baru   : {prod_baru:,.0f} (Lama: {row['prod']:,.0f})")
@@ -1179,13 +1212,13 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         # 3. Buka Blok II
         buka_blok_ii(page, nama)
 
-        # 4. Validasi KBLI Kategori A
-        is_kat_a = cek_kbli_kategori_a(page)
-        if not is_kat_a:
-            print(f"[ABORT] KBLI/Kategori terdeteksi BUKAN Kategori A. Menghentikan baris ini.")
+        # 4. Validasi KBLI / Kategori (G atau A)
+        is_kat_cocok = cek_kbli_kategori(page, kategori_target=kategori)
+        if not is_kat_cocok:
+            print(f"[ABORT] KBLI/Kategori terdeteksi BUKAN Kategori {kategori}. Menghentikan baris ini.")
             conn.execute("UPDATE kasus_nerwana SET status = 'KBLI_MISMATCH' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
             conn.commit()
-            log_audit(aid, nama, "KBLI_CHECK", status_sebelumnya="APPROVED", status_baru="KBLI_MISMATCH", pesan="Kategori di FASIH bukan A")
+            log_audit(aid, nama, "KBLI_CHECK", status_sebelumnya="APPROVED", status_baru="KBLI_MISMATCH", pesan=f"Kategori di FASIH bukan {kategori}")
             return "KBLI_MISMATCH", None
 
         # 5. Isi Nilai Baru (dengan event keyboard natural)
@@ -1204,13 +1237,14 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         time.sleep(0.5)
 
         # 6. Tambah Catatan jika diaktifkan (WAJIB DI ISIAN 27a)
-        if isi_catatan and kode_catatan:
+        if isi_catatan:
+            catatan_final = kode_catatan or "#DC_01"
             c_target_27a = c_pbj_found or cari_container_isian_27a(page)
             if c_target_27a:
-                print(f"[FASIH] Menambahkan remark '{kode_catatan}' pada Isian 27a (Nilai Produksi/PBJ)...")
-                tambah_catatan_field(page, c_target_27a, kode_catatan)
+                print(f"[FASIH] Menambahkan remark '{catatan_final}' pada Isian 27a (Nilai Produksi/PBJ)...")
+                tambah_catatan_field(page, c_target_27a, catatan_final)
             else:
-                print(f"[WARN] Container Isian 27a tidak ditemukan untuk menambahkan catatan '{kode_catatan}'.")
+                print(f"[WARN] Container Isian 27a tidak ditemukan untuk menambahkan catatan '{catatan_final}'.")
         elif not isi_catatan:
             print("[INFO] Pengisian catatan dilewati sesuai opsi testing (fokus isi form nilai).")
 
@@ -1272,29 +1306,12 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
                       nilai_baru={'pbj': pbj_baru, 'prod': prod_baru, 'ops': ops_baru},
                       kode_catatan=kode_catatan, status_sebelumnya="APPROVED", status_baru="SUBMITTED")
 
-                # Otomatis Update Tindak Lanjut ke Selancar Nerwana (HANYA SATU CARA)
-                updated_via_ui = False
-                if target_info and target_info.get('tl_select'):
-                    try:
-                        print("[SELANCAR] Mengubah dropdown tindak lanjut di tabel Selancar menjadi 'Sudah direvisi'...")
-                        target_info['tl_select'].select_option("sudah_direvisi")
-                        updated_via_ui = True
-                        time.sleep(1)
-                        # Tandai status COMPLETED di database lokal
-                        conn.execute("UPDATE kasus_nerwana SET tindak_lanjut = 'sudah_direvisi', status = 'COMPLETED' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
-                        conn.commit()
-                    except Exception as e_sel:
-                        print(f"[INFO] Update via dropdown gagal, mencoba via API: {e_sel}")
-
-                if not updated_via_ui and nerwana_updater and row.get('data_kunci'):
-                    print("[INTEGRASI] Mengupdate status tindak lanjut di Selancar Nerwana via API AJAX...")
-                    time.sleep(0.5)
-                    nerwana_updater.update_tindak_lanjut(
-                        data_kunci=row['data_kunci'],
-                        status="sudah_direvisi",
-                        assignment_id=aid,
-                        nama_usaha=nama
-                    )
+                # Otomatis Update Tindak Lanjut ke Selancar Nerwana menjadi 'sudah_direvisi'
+                from updater_nerwana import set_tindak_lanjut_selancar
+                print("[SELANCAR] Menyelesaikan tindak lanjut di tabel Selancar menjadi 'Sudah direvisi'...")
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status="sudah_direvisi")
+                conn.execute("UPDATE kasus_nerwana SET tindak_lanjut = 'sudah_direvisi', status = 'COMPLETED' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
+                conn.commit()
 
                 return "SUBMITTED", None
             else:
@@ -1338,6 +1355,9 @@ def main():
     print("           FASE 3: EKSEKUTOR FASIH (PLAYWRIGHT)")
     print("=" * 65)
     
+    # Bersihkan screenshot lama agar disk tetap ramping
+    cleanup_old_screenshots(max_keep=30)
+    
     # 0. PERIKSA APAKAH SEDANG DALAM COOLDOWN WAF
     is_locked, sisa_detik, bot_code, jam_blokir = cek_waf_cooldown()
     if is_locked:
@@ -1356,25 +1376,32 @@ def main():
     if not start_debug_chrome():
         return
 
-    from sync_review import sync_excel_to_db
-    sync_excel_to_db()
+    try:
+        from sync_review import sync_excel_to_db
+        sync_excel_to_db()
+    except Exception as e_sync:
+        print(f"[INFO] Sinkronisasi Excel dilewati / opsional: {e_sync}")
 
     conn = get_connection()
-    approved_rows = conn.execute("SELECT * FROM kasus_nerwana WHERE status = 'APPROVED' ORDER BY skor_usulan DESC").fetchall()
+    approved_count = conn.execute("SELECT COUNT(*) FROM kasus_nerwana WHERE status = 'APPROVED'").fetchone()[0]
     conn.close()
 
-    total_approved = len(approved_rows)
-    print(f"Total baris berstatus APPROVED siap diproses: {total_approved} baris.")
-    
-    if total_approved == 0:
-        print("[INFO] Tidak ada baris APPROVED.")
-        return
+    print(f"\n[STATUS] Database lokal memiliki {approved_count} baris APPROVED tersimpan.")
+    print("         Mode LIVE ON-THE-FLY aktif: Bot memeriksa langsung baris di tabel Selancar")
+    print("         secara urut di layar (tanpa scraping awal & tanpa lompat-lompat).")
+
+    print("\nPilih Kategori Lapangan Usaha:")
+    print("  [1] Kategori G - Perdagangan (Threshold 0.64 - 0.78) [Default]")
+    print("  [2] Kategori A - Pertanian (Threshold 0.51 - 0.94)")
+    kat_choice = input("Masukkan pilihan kategori [1/2] (default 1 - G): ").strip() or "1"
+    kategori_aktif = "A" if kat_choice == "2" else "G"
+    print(f"[KATEGORI AKTIF] Menggunakan Kategori {kategori_aktif}")
 
     print("\nPilih Mode Operasi:")
     print("  [1] Uji 1 Baris Pertama - DRY-RUN (Isi form tapi TIDAK submit, konfirmasi manual)")
-    print("  [2] Uji 1 Baris Pertama - SUBMIT SUNGGUHAN (Kirim ke server FASIH)")
-    print("  [3] Eksekusi Batch DRY-RUN (Batas 1-25 baris, tanpa submit)")
-    print("  [4] Eksekusi Batch SUBMIT SUNGGUHAN (Batas 1-25 baris, submit)")
+    print("  [2] Uji 1 Baris Pertama - SUBMIT SUNGGUHAN (Kirim ke server FASIH & update Selancar)")
+    print("  [3] Eksekusi Batch DRY-RUN (Batas 1-50 baris, tanpa submit)")
+    print("  [4] Eksekusi Batch SUBMIT SUNGGUHAN (Batas 1-50 baris, submit)")
     
     pilihan = input("\nMasukkan pilihan [1/2/3/4] (default 1): ").strip() or "1"
     
@@ -1393,18 +1420,18 @@ def main():
     elif pilihan == "3":
         dry_run = True
         interaktif = False
-        limit_str = input(f"Berapa jumlah baris batch dry-run? (1-25, default 10, maks 25): ").strip() or "10"
-        limit = max(1, min(int(limit_str), 25))
+        limit_str = input(f"Berapa jumlah baris batch dry-run? (1-50, default 10, maks 50): ").strip() or "10"
+        limit = max(1, min(int(limit_str), 50))
     elif pilihan == "4":
         dry_run = False
         interaktif = False
-        limit_str = input(f"Berapa jumlah baris batch submit? (1-25, default 10, maks 25): ").strip() or "10"
-        limit = max(1, min(int(limit_str), 25))
+        limit_str = input(f"Berapa jumlah baris batch submit? (1-50, default 10, maks 50): ").strip() or "10"
+        limit = max(1, min(int(limit_str), 50))
 
-    tanya_catatan = False
+    tanya_catatan = True
     if pilihan in ["1", "3"]:
-        jawab_c = input("Sertakan penulisan catatan (#DC_01)? [y/n] (default n - fokus isi form angka): ").strip().lower()
-        tanya_catatan = (jawab_c == "y")
+        jawab_c = input("Sertakan penulisan catatan (#DC_01) pada isian 27.a? [y/n] (default y): ").strip().lower()
+        tanya_catatan = (jawab_c != "n")
     else:
         tanya_catatan = True
 
@@ -1422,9 +1449,10 @@ def main():
         nerwana_updater = NerwanaManager(context)
         selancar_page = nerwana_updater.get_or_create_page()
 
-        # 1. Buka dan siapkan Selancar: Landing -> DC Terkena Flag -> Kategori A
-        buka_dan_siapkan_selancar(selancar_page)
+        # 1. Buka dan siapkan Selancar: Landing -> DC Terkena Flag -> Kategori Aktif
+        buka_dan_siapkan_selancar(selancar_page, kategori=kategori_aktif)
 
+        session_skip_aids = set()
         sukses = 0
         gagal = 0
         di_skip = 0
@@ -1436,20 +1464,20 @@ def main():
 
         while sukses < limit:
             conn = get_connection()
-            # 2. Cari baris di tabel Selancar yang masih belum dan berstatus APPROVED di DB
-            target_info = cari_target_di_tabel_selancar(selancar_page, conn)
+            # 2. Cari baris di tabel Selancar secara urut (baris 1, 2, dst)
+            target_info = cari_target_di_tabel_selancar(selancar_page, conn, session_skip_aids=session_skip_aids, kategori=kategori_aktif)
             conn.close()
 
-            if not target_info:
-                # Coba buka halaman berikutnya di Selancar jika ada
+            while not target_info:
                 pindah = lanjut_halaman_berikutnya_selancar(selancar_page)
-                if pindah:
-                    conn = get_connection()
-                    target_info = cari_target_di_tabel_selancar(selancar_page, conn)
-                    conn.close()
+                if not pindah:
+                    break
+                conn = get_connection()
+                target_info = cari_target_di_tabel_selancar(selancar_page, conn, session_skip_aids=session_skip_aids, kategori=kategori_aktif)
+                conn.close()
 
             if not target_info:
-                print("\n[INFO] Tidak ada lagi baris APPROVED yang belum dikerjakan di tabel Selancar saat ini.")
+                print(f"\n[INFO] Tidak ada lagi baris yang perlu dikerjakan di tabel Selancar Kategori {kategori_aktif} saat ini.")
                 break
 
             row = target_info['db_row']
@@ -1459,6 +1487,12 @@ def main():
 
             print(f"\n>>> Memproses Target [{sukses + 1}/{limit}] (Total dicek: {sukses + gagal + di_skip + 1}) <<<")
             print(f"[SELANCAR] Target ditemukan di tabel: '{nama}' (AID: {aid})")
+
+            # 2.5 Ubah status di Selancar menjadi 'Akan direvisi' sebelum membuka tab FASIH
+            from updater_nerwana import set_tindak_lanjut_selancar
+            print(f"[SELANCAR] Menandai assignment '{nama}' (AID: {aid}) menjadi 'Akan direvisi' sebelum membuka FASIH...")
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status="akan_direvisi")
+            time.sleep(0.8)
 
             # 3. Buka tab FASIH dari baris tabel di Selancar
             # Bersihkan tab FASIH lama jika masih ada yang terbuka
@@ -1485,6 +1519,7 @@ def main():
 
             if not fasih_page or fasih_page.is_closed():
                 print("[ERROR] Gagal membuka/menghubungkan tab FASIH. Mencoba baris berikutnya...")
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 gagal += 1
                 continue
 
@@ -1503,7 +1538,8 @@ def main():
                 interaktif=interaktif, 
                 isi_catatan=tanya_catatan, 
                 nerwana_updater=nerwana_updater,
-                target_info=target_info
+                target_info=target_info,
+                kategori=kategori_aktif
             )
 
             # Sesuai instruksi: selesai submit / selesai eksekusi, tutup tab FASIH
@@ -1524,29 +1560,36 @@ def main():
 
             # EVALUASI HASIL:
             if hasil == "WAF_BLOCK":
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 waf_terdeteksi = True
                 waf_bot_code = info or "BOT-DETECTED"
                 print("\n[CIRCUIT BREAKER] Program dihentikan total karena WAF bot terdeteksi.")
                 break
             elif hasil == "SSO_LIMIT_EXCEEDED":
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 print("\n[SSO STOP] Batch dihentikan karena SSO memerlukan intervensi login manual.")
                 break
             elif hasil in ["APPLIED", "SUBMITTED"]:
                 sukses += 1
+                session_skip_aids.add(aid)
                 if sukses < limit:
                     # JEDA WAJAR: 4-7 detik acak antar assignment
                     jeda = random.uniform(4.0, 7.0)
                     print(f"[JEDA] Menunggu {jeda:.1f} detik sebelum assignment berikutnya...")
                     time.sleep(jeda)
-            elif hasil in ["SKIPPED_FASIH_ERROR", "KBLI_MISMATCH"]:
+            elif hasil in ["SKIPPED_FASIH_ERROR", "KBLI_MISMATCH", "CANCELLED"]:
                 di_skip += 1
-                print("[INFO] Assignment FASIH dilewati. Otomatis NEXT ke baris berikutnya...")
+                session_skip_aids.add(aid)
+                print(f"[SELANCAR] Mengembalikan status assignment '{nama}' ke semula karena tidak disubmit...")
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+                if hasil == "CANCELLED":
+                    print("[INFO] Eksekusi dihentikan oleh reviewer.")
+                    break
                 time.sleep(random.uniform(1.5, 3.0))
-            elif hasil == "CANCELLED":
-                print("[INFO] Eksekusi dihentikan oleh reviewer.")
-                break
             else:
                 gagal += 1
+                session_skip_aids.add(aid)
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 if pilihan in ["1", "2"]:
                     break
 

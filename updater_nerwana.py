@@ -1,6 +1,8 @@
 import time
 import urllib.parse
-from database import get_connection, log_audit
+import re
+from database import get_connection, log_audit, upsert_kasus
+from kalkulator_usulan import calculate_usulan
 
 NERWANA_BASE_URL = "https://nerwana-aceh.web.bps.go.id/selancar2026/dc-terkena-flag"
 NERWANA_LANDING_URL = "https://nerwana-aceh.web.bps.go.id/selancar2026/landing"
@@ -106,17 +108,18 @@ def pastikan_login_selancar(page):
 
     return "selancar2026" in page.url.lower() and "login" not in page.url.lower()
 
-def buka_dan_siapkan_selancar(page):
+def buka_dan_siapkan_selancar(page, kategori="G"):
     """
     Menjalankan alur navigasi alami:
     1. Masuk ke Selancar landing (https://nerwana-aceh.web.bps.go.id/selancar2026/landing)
     2. Selesaikan login SSO / tombol login jika diperlukan
     3. Dari landing, klik kartu/menu 'DC Terkena Flag'
-    4. Di halaman DC Terkena Flag, pilih Kategori 'A'
+    4. Di halaman DC Terkena Flag, pilih Kategori sesuai pilihan (A atau G)
     5. Tunggu tabel data dimuat penuh
     """
+    kat = (kategori or "G").upper().strip()
     print("\n" + "=" * 65)
-    print("           MENYIAPKAN HALAMAN SELANCAR NERWANA")
+    print(f"        MENYIAPKAN HALAMAN SELANCAR NERWANA (KATEGORI {kat})")
     print("=" * 65)
     url = page.url.lower()
 
@@ -152,39 +155,54 @@ def buka_dan_siapkan_selancar(page):
     time.sleep(2)
     pastikan_login_selancar(page)
 
-    # 3. Di halaman DC Terkena Flag, pastikan Kategori 'A' dipilih
+    # 3. Di halaman DC Terkena Flag, pastikan Kategori yang diinginkan dipilih
     try:
         page.wait_for_selector('#filter_kategori, select[name="kategori"]', timeout=15000)
         select_kat = page.locator('#filter_kategori, select[name="kategori"]').first
         current_val = select_kat.input_value()
-        if current_val != "A":
-            print("[SELANCAR] Memilih 'Kategori A' pada dropdown filter...")
-            select_kat.select_option("A")
+        if current_val != kat:
+            print(f"[SELANCAR] Memilih 'Kategori {kat}' pada dropdown filter...")
+            select_kat.select_option(kat)
             time.sleep(2)
     except Exception as e_sel:
         print(f"[SELANCAR-INFO] Pilihan kategori: {e_sel}")
 
     # 4. Tunggu tabel dimuat
-    print("[SELANCAR] Menunggu tabel data Kategori A selesai dimuat...")
+    print(f"[SELANCAR] Menunggu tabel data Kategori {kat} selesai dimuat...")
     try:
         page.wait_for_selector('#tableEvalProfil tbody tr', timeout=30000)
         try:
             page.locator('#loading-overlay').wait_for(state="hidden", timeout=15000)
         except Exception:
             pass
-        print("[SELANCAR] Tabel data Kategori A siap di layar!")
+        print(f"[SELANCAR] Tabel data Kategori {kat} siap di layar!")
         return True
     except Exception as e_wait:
         print(f"[SELANCAR-WARN] Menunggu tabel: {e_wait}")
         return False
 
-def cari_target_di_tabel_selancar(page, conn):
+def to_float(val, default=0.0):
+    try:
+        if val is None:
+            return default
+        s = str(val).replace(',', '').strip()
+        return float(s) if s else default
+    except Exception:
+        return default
+
+def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="G"):
     """
-    Memeriksa baris-baris pada tabel Selancar Kategori A yang tampil di layar:
+    Memeriksa baris-baris pada tabel Selancar Kategori terkait (G atau A) yang tampil di layar secara urut:
     - Mencari baris yang tindak lanjutnya masih belum (bukan 'sudah_direvisi') dan tidak terkunci.
-    - Mencocokkan dengan database lokal kasus_nerwana yang berstatus 'APPROVED'.
+    - Menghindari baris yang sudah selesai dikerjakan, error di FASIH, atau tidak butuh perbaikan.
+    - Jika baris sudah berstatus APPROVED di DB, gunakan usulan tersebut.
+    - Jika belum ada di DB / belum di-review, hitung usulan penyesuaian secara live on-the-fly via calculate_usulan(..., kategori).
     Mengembalikan dict informasi target jika ditemukan, atau None.
     """
+    kat = (kategori or "G").upper().strip()
+    if session_skip_aids is None:
+        session_skip_aids = set()
+
     try:
         page.wait_for_selector('#tableEvalProfil tbody tr', timeout=15000)
         rows = page.locator('#tableEvalProfil tbody tr').all()
@@ -193,37 +211,158 @@ def cari_target_di_tabel_selancar(page, conn):
             if sim_btn.count() == 0:
                 continue
             aid = sim_btn.get_attribute("data-aid")
-            nama = sim_btn.get_attribute("data-nama")
+            nama = sim_btn.get_attribute("data-nama") or ""
             if not aid:
+                continue
+
+            if aid in session_skip_aids:
                 continue
 
             tl_select = tr.locator('select.dc-tl-select').first
             stat = tl_select.input_value() or tl_select.get_attribute("data-prev") or ""
             is_terkunci = tl_select.get_attribute("data-terkunci") == "1"
 
-            if stat == "sudah_direvisi" or is_terkunci:
+            if stat in ["sudah_direvisi", "akan_direvisi"] or is_terkunci:
+                session_skip_aids.add(aid)
                 continue
 
-            # Cocokkan dengan database lokal kasus_nerwana berstatus APPROVED
-            db_row = conn.execute("SELECT * FROM kasus_nerwana WHERE assignment_id = ? AND status = 'APPROVED'", (aid,)).fetchone()
-            if not db_row and nama:
-                db_row = conn.execute("SELECT * FROM kasus_nerwana WHERE nama_usaha = ? AND status = 'APPROVED'", (nama,)).fetchone()
+            # Periksa riwayat status di DB lokal
+            existing = conn.execute("SELECT * FROM kasus_nerwana WHERE assignment_id = ?", (aid,)).fetchone()
+            if not existing and nama:
+                existing = conn.execute("SELECT * FROM kasus_nerwana WHERE nama_usaha = ?", (nama,)).fetchone()
 
-            if db_row:
-                link_btn = tr.locator('a.dc-link-btn').first
-                if link_btn.count() == 0:
-                    link_btn = tr.locator('a[href*="assignment"]').first
+            db_row = None
+            if existing:
+                ex_stat = existing['status']
+                # Jika sudah pernah selesai, error FASIH, KBLI bukan target, atau rasio normal (SKIP): lewati
+                if ex_stat in ['COMPLETED', 'SUBMITTED', 'FASIH_FORBIDDEN', 'KBLI_MISMATCH', 'SKIP', 'NEED_REVIEW']:
+                    session_skip_aids.add(aid)
+                    continue
+                # Jika sudah di-approve di DB dan nilai barunya lengkap, pakai nilai DB
+                if ex_stat == 'APPROVED' and existing['nilai_baru_pbj'] is not None:
+                    db_row = dict(existing)
 
-                return {
-                    'tr': tr,
-                    'link_btn': link_btn,
-                    'tl_select': tl_select,
-                    'aid': aid,
-                    'nama': nama,
-                    'stat': stat,
-                    'data_kunci': tl_select.get_attribute("data-kunci") or "",
-                    'db_row': dict(db_row)
+            # Jika belum ada nilai usulan approved di DB, hitung langsung secara on-the-fly dari baris live
+            if not db_row:
+                pbj = to_float(sim_btn.get_attribute("data-pbj"))
+                prod = to_float(sim_btn.get_attribute("data-prod"))
+                ops = to_float(sim_btn.get_attribute("data-ops"))
+                beli = to_float(sim_btn.get_attribute("data-beli"))
+                nonops = to_float(sim_btn.get_attribute("data-nonops"))
+                lain = to_float(sim_btn.get_attribute("data-lain"))
+                output = to_float(sim_btn.get_attribute("data-output"))
+                ntb = to_float(sim_btn.get_attribute("data-ntb"))
+                rasio = to_float(sim_btn.get_attribute("data-rasio"))
+                meta_text = sim_btn.get_attribute("data-meta") or ""
+                link_fasih = sim_btn.get_attribute("data-link") or ""
+
+                kbli = ""
+                deskripsi_kbli = ""
+                m = re.search(r'KBLI\s*([0-9A-Z]+)\s*-\s*(.+)', meta_text, re.I)
+                if m:
+                    kbli = m.group(1).strip()
+                    deskripsi_kbli = m.group(2).strip()
+                else:
+                    kbli = meta_text.strip()
+
+                calc_input = {
+                    'pbj': pbj,
+                    'prod': prod,
+                    'ops': ops,
+                    'beli': beli,
+                    'nonops': nonops,
+                    'lain': lain,
+                    'output': output,
+                    'ntb': ntb,
+                    'rasio': rasio,
+                    'kategori': kat
                 }
+                usulan = calculate_usulan(calc_input, kategori=kat)
+
+                if usulan['status'] == 'SKIP':
+                    print(f"[SELANCAR-SKIP] '{nama}' ({aid}) - Rasio sudah normal ({rasio:.2f}). Dilewati.")
+                    session_skip_aids.add(aid)
+                    conn.execute("""
+                        INSERT INTO kasus_nerwana (
+                            assignment_id, nama_usaha, kabkota, kategori, kbli, deskripsi_kbli, link_fasih,
+                            pbj, prod, ops, beli, nonops, lain, output, ntb, rasio,
+                            filter_spesifik, tindak_lanjut, status, alasan_review
+                        ) VALUES (?, ?, '1175', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?, 'SKIP', ?)
+                        ON CONFLICT(assignment_id, nama_usaha) DO UPDATE SET status = 'SKIP', alasan_review = excluded.alasan_review
+                    """, (aid, nama, kat, kbli, deskripsi_kbli, link_fasih, pbj, prod, ops, beli, nonops, lain, output, ntb, rasio, stat, usulan['alasan']))
+                    conn.commit()
+                    continue
+
+                if usulan['status'] == 'NEED_REVIEW':
+                    print(f"[SELANCAR-NEED_REVIEW] '{nama}' ({aid}) - {usulan['alasan']}. Dilewati untuk review manual.")
+                    session_skip_aids.add(aid)
+                    conn.execute("""
+                        INSERT INTO kasus_nerwana (
+                            assignment_id, nama_usaha, kabkota, kategori, kbli, deskripsi_kbli, link_fasih,
+                            pbj, prod, ops, beli, nonops, lain, output, ntb, rasio,
+                            filter_spesifik, tindak_lanjut, status, alasan_review
+                        ) VALUES (?, ?, '1175', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?, 'NEED_REVIEW', ?)
+                        ON CONFLICT(assignment_id, nama_usaha) DO UPDATE SET status = 'NEED_REVIEW', alasan_review = excluded.alasan_review
+                    """, (aid, nama, kat, kbli, deskripsi_kbli, link_fasih, pbj, prod, ops, beli, nonops, lain, output, ntb, rasio, stat, usulan['alasan']))
+                    conn.commit()
+                    continue
+
+                # Usulan perbaikan valid (status PENDING dari heuristik) -> Siapkan db_row dan set APPROVED
+                data_kunci = tl_select.get_attribute("data-kunci") or ""
+                db_row = {
+                    'assignment_id': aid,
+                    'nama_usaha': nama,
+                    'kabkota': '1175',
+                    'kategori': kat,
+                    'kbli': kbli,
+                    'deskripsi_kbli': deskripsi_kbli,
+                    'link_fasih': link_fasih,
+                    'pbj': pbj,
+                    'prod': prod,
+                    'ops': ops,
+                    'beli': beli,
+                    'nonops': nonops,
+                    'lain': lain,
+                    'output': output,
+                    'ntb': ntb,
+                    'rasio': rasio,
+                    'filter_spesifik': 'live_selancar',
+                    'tindak_lanjut': stat,
+                    'tindak_lanjut_oleh': '',
+                    'data_kunci': data_kunci,
+                    'status': 'APPROVED',
+                    'alasan_review': usulan.get('alasan', ''),
+                    'nilai_baru_pbj': usulan['pbj_baru'],
+                    'nilai_baru_prod': usulan['prod_baru'],
+                    'nilai_baru_ops': usulan['ops_baru'],
+                    'rasio_baru': usulan['rasio_baru'],
+                    'skor_usulan': usulan['skor'],
+                    'alasan_usulan': usulan['alasan'],
+                    'kode_catatan': usulan.get('kode_catatan', ''),
+                }
+                upsert_kasus(db_row)
+                conn.execute("""
+                    UPDATE kasus_nerwana SET 
+                        nilai_baru_pbj = ?, nilai_baru_prod = ?, nilai_baru_ops = ?, 
+                        rasio_baru = ?, skor_usulan = ?, alasan_usulan = ?, kode_catatan = ?, status = 'APPROVED'
+                    WHERE assignment_id = ? AND nama_usaha = ?
+                """, (usulan['pbj_baru'], usulan['prod_baru'], usulan['ops_baru'], usulan['rasio_baru'], usulan['skor'], usulan['alasan'], usulan.get('kode_catatan', ''), aid, nama))
+                conn.commit()
+
+            link_btn = tr.locator('a.dc-link-btn').first
+            if link_btn.count() == 0:
+                link_btn = tr.locator('a[href*="assignment"]').first
+
+            return {
+                'tr': tr,
+                'link_btn': link_btn,
+                'tl_select': tl_select,
+                'aid': aid,
+                'nama': nama,
+                'stat': stat,
+                'data_kunci': tl_select.get_attribute("data-kunci") or "",
+                'db_row': db_row
+            }
     except Exception as e:
         print(f"[SELANCAR-ERROR] Gagal membaca baris tabel: {e}")
     return None
@@ -231,7 +370,14 @@ def cari_target_di_tabel_selancar(page, conn):
 def lanjut_halaman_berikutnya_selancar(page):
     """Mengecek tombol pagination berikutnya dan mengkliknya jika ada."""
     try:
-        btn_next = page.locator('.pagination li:not(.disabled) a:has-text("›"), .pagination li:not(.disabled) a:has-text(">"), a[rel="next"]').first
+        selector = (
+            '.ep-pager .pages a[title="Berikutnya"], '
+            '.ep-pager .pages a:has(.fa-chevron-right), '
+            '.pagination li:not(.disabled) a:has-text("›"), '
+            '.pagination li:not(.disabled) a:has-text(">"), '
+            'a[rel="next"]'
+        )
+        btn_next = page.locator(selector).first
         if btn_next.count() > 0 and btn_next.is_visible():
             print("[SELANCAR] Berpindah ke halaman tabel berikutnya...")
             btn_next.click()
@@ -242,9 +388,53 @@ def lanjut_halaman_berikutnya_selancar(page):
                 pass
             time.sleep(2)
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[SELANCAR-WARN] Gagal pindah halaman: {e}")
     return False
+
+def set_tindak_lanjut_selancar(target_info, nerwana_updater=None, status="akan_direvisi"):
+    """
+    Mengubah status tindak lanjut di Selancar Nerwana:
+    - status: 'akan_direvisi', 'sudah_direvisi', atau '' (belum)
+    - Pertama mencoba via dropdown UI (select_option) agar trigger event asli halaman.
+    - Kedua memastikan via AJAX API POST jika UI dropdown terkendala.
+    """
+    if not target_info:
+        return False
+
+    tl_select = target_info.get('tl_select')
+    data_kunci = target_info.get('data_kunci')
+    aid = target_info.get('aid')
+    nama = target_info.get('nama')
+
+    updated = False
+    label_status = "Akan direvisi" if status == "akan_direvisi" else ("Sudah direvisi" if status == "sudah_direvisi" else "Belum")
+
+    if tl_select:
+        try:
+            tl_select.scroll_into_view_if_needed()
+            time.sleep(0.3)
+            tl_select.select_option(status)
+            updated = True
+            time.sleep(0.8)
+            print(f"[SELANCAR] Dropdown tindak lanjut berhasil diubah menjadi '{label_status}' via UI.")
+        except Exception as e_ui:
+            print(f"[INFO] Ubah dropdown UI terkendala: {e_ui}")
+
+    if not updated and nerwana_updater and data_kunci:
+        try:
+            print(f"[SELANCAR] Mengubah status tindak lanjut menjadi '{label_status}' via AJAX API...")
+            ok = nerwana_updater.update_tindak_lanjut(
+                data_kunci=data_kunci,
+                status=status,
+                assignment_id=aid,
+                nama_usaha=nama
+            )
+            updated = ok
+        except Exception as e_api:
+            print(f"[WARN] AJAX API tindak lanjut gagal: {e_api}")
+
+    return updated
 
 class NerwanaManager:
     def __init__(self, browser_context):
@@ -440,11 +630,12 @@ class NerwanaManager:
                 # Update status di database lokal
                 if assignment_id and nama_usaha:
                     conn = get_connection()
+                    new_db_stat = 'COMPLETED' if status == 'sudah_direvisi' else 'IN_PROGRESS'
                     conn.execute("""
                         UPDATE kasus_nerwana 
-                        SET tindak_lanjut = ?, tindak_lanjut_oleh = ?, status = 'COMPLETED', updated_at = CURRENT_TIMESTAMP 
+                        SET tindak_lanjut = ?, tindak_lanjut_oleh = ?, status = ?, updated_at = CURRENT_TIMESTAMP 
                         WHERE assignment_id = ? AND nama_usaha = ?
-                    """, (status, oleh, assignment_id, nama_usaha))
+                    """, (status, oleh, new_db_stat, assignment_id, nama_usaha))
                     conn.commit()
                     conn.close()
                     
