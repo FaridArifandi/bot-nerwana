@@ -852,28 +852,77 @@ def tambah_catatan_field(page, container, kode_catatan):
             time.sleep(1)
             print(f"[FASIH] Catatan '{kode_catatan}' tersimpan.")
                 
-            btn_close = dialog.locator('button:has-text("✕"), button:has-text("×"), button[aria-label="Close"], button[title="Dismiss"]').first
-            if btn_close.count() > 0 and btn_close.is_visible():
-                btn_close.click()
-            else:
-                page.keyboard.press("Escape")
-            time.sleep(1)
+            tutup_modal_dialog(page)
+            time.sleep(0.5)
             return True
     except Exception as e:
         print(f"[INFO] Catatan dilewati karena kendala UI: {e}")
-        try:
-            page.keyboard.press("Escape")
-        except:
-            pass
+        tutup_modal_dialog(page)
         return False
 
     return False
 
+def tutup_modal_dialog(page):
+    """
+    Menutup modal dialog (seperti modal Catatan) dengan aman dan tuntas:
+    1. Mencari tombol close di header bagian atas-kanan dialog (menghindari tombol kirim di bawah).
+    2. Menekan tombol Escape.
+    3. Mengklik backdrop luar jika masih terbuka.
+    """
+    try:
+        dialog = page.locator('div[role="dialog"]').last
+        if dialog.count() == 0 or not dialog.is_visible():
+            return True
+
+        # 1. Coba klik tombol close spesifik di header (bukan tombol send)
+        btn_close = dialog.locator('button:has-text("✕"), button:has-text("×"), button[aria-label*="close" i], button.btn-close').first
+        if btn_close.count() > 0 and btn_close.is_visible():
+            try:
+                btn_close.click(timeout=1500)
+            except Exception:
+                pass
+
+        time.sleep(0.3)
+        # 2. Cari tombol di kuadran kanan atas modal (header) berdasarkan koordinat
+        if dialog.count() > 0 and dialog.is_visible():
+            dialog_box = dialog.bounding_box()
+            if dialog_box:
+                top_limit = dialog_box['y'] + 80
+                right_limit = dialog_box['x'] + (dialog_box['width'] * 0.6)
+                for btn in dialog.locator('button').all():
+                    try:
+                        bbox = btn.bounding_box()
+                        if bbox and bbox['y'] < top_limit and bbox['x'] > right_limit:
+                            btn.click(timeout=1500)
+                            break
+                    except Exception:
+                        pass
+
+        time.sleep(0.3)
+        # 3. Tekan Escape
+        if dialog.count() > 0 and dialog.is_visible():
+            page.keyboard.press("Escape")
+
+        time.sleep(0.3)
+        # 4. Klik backdrop di luar modal jika masih membandel
+        if dialog.count() > 0 and dialog.is_visible():
+            page.mouse.click(20, 20)
+
+        time.sleep(0.3)
+        return not dialog.is_visible()
+    except Exception:
+        try:
+            page.keyboard.press("Escape")
+        except:
+            pass
+        return True
+
 def cek_catatan_eksisting_27a(page, container=None):
     """
-    Memeriksa apakah pada Isian 27a sudah terdapat catatan '#DC' / 'DC'.
+    Memeriksa apakah pada Isian 27a sudah terdapat riwayat catatan '#DC' / 'DC'.
     Jika sudah ada, mengembalikan (True, isi_catatan) agar assignment dilewati
     dan tidak diedit ganda / bentrok antar 2 komputer.
+    Jika kosong / tidak ada DC, modal PASTI ditutup kembali sebelum bot lanjut bekerja.
     """
     if not container:
         container = cari_container_isian_27a(page)
@@ -895,6 +944,16 @@ def cek_catatan_eksisting_27a(page, container=None):
                 pass
 
         if not btn_catatan:
+            # Cari tombol dengan ikon komentar
+            for b in container.locator('button').all():
+                try:
+                    if b.is_visible() and ("catatan" in (b.get_attribute("title") or "").lower() or "comment" in (b.get_attribute("class") or "").lower()):
+                        btn_catatan = b
+                        break
+                except Exception:
+                    pass
+
+        if not btn_catatan:
             return False, ""
 
         btn_catatan.scroll_into_view_if_needed()
@@ -907,19 +966,11 @@ def cek_catatan_eksisting_27a(page, container=None):
             return False, ""
 
         # KUNCI UTAMA: Baca seluruh teks di dalam modal dialog!
-        # Riwayat chat catatan tersimpan di bubble teks dialog, BUKAN di input textarea.
+        # Riwayat chat catatan tersimpan di bubble teks dialog.
         dialog_text = dialog.inner_text().strip()
 
-        # Tutup dialog catatan
-        try:
-            btn_close = dialog.locator('button:has-text("✕"), button:has-text("×"), button[aria-label="Close"], button.close, button:has(svg)').first
-            if btn_close.count() > 0 and btn_close.is_visible():
-                btn_close.click()
-            else:
-                page.keyboard.press("Escape")
-        except Exception:
-            page.keyboard.press("Escape")
-        time.sleep(0.5)
+        # TUTUP MODAL DIALOG SECARA TUNTAS
+        tutup_modal_dialog(page)
 
         # Periksa apakah ada riwayat catatan mengandung 'DC' (misal: #DC_01, DC_01, #DC)
         import re
@@ -931,10 +982,7 @@ def cek_catatan_eksisting_27a(page, container=None):
         return False, ""
     except Exception as e:
         print(f"[INFO] Pengecekan catatan eksisting 27a: {e}")
-        try:
-            page.keyboard.press("Escape")
-        except:
-            pass
+        tutup_modal_dialog(page)
         return False, ""
 
 def buka_menu_catatan(page):
@@ -1303,6 +1351,9 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             conn.commit()
             log_audit(aid, nama, "ALREADY_HAS_DC_REMARK", status_sebelumnya="APPROVED", status_baru="COMPLETED", pesan=f"Isian 27a sudah berisi remark '{teks_dc}'")
             return "ALREADY_COMPLETED", teks_dc
+
+        # Pastikan modal dialog 100% tertutup sebelum mulai mengisi field
+        tutup_modal_dialog(page)
 
         # 5. Isi Nilai Baru (dengan event keyboard natural)
         c_pbj_found = c_27a_cek
