@@ -181,6 +181,37 @@ def buka_dan_siapkan_selancar(page, kategori="G"):
         print(f"[SELANCAR-WARN] Menunggu tabel: {e_wait}")
         return False
 
+def refresh_selancar_realtime(page, kategori="G"):
+    """
+    Me-refresh halaman Selancar secara real-time agar sinkron dengan perubahan dari komputer lain.
+    Memastikan tabel selesai dimuat dan kategori yang aktif tetap sesuai.
+    """
+    kat = (kategori or "G").upper().strip()
+    try:
+        print(f"[SELANCAR-SYNC] Merefresh halaman Selancar (Kategori {kat}) secara real-time...")
+        page.reload(wait_until="domcontentloaded", timeout=25000)
+        
+        # Cek apakah filter kategori tetap sesuai
+        try:
+            page.wait_for_selector('#filter_kategori, select[name="kategori"]', timeout=10000)
+            select_kat = page.locator('#filter_kategori, select[name="kategori"]').first
+            if select_kat.input_value() != kat:
+                select_kat.select_option(kat)
+                time.sleep(1.5)
+        except Exception:
+            pass
+            
+        page.wait_for_selector('#tableEvalProfil tbody tr', timeout=20000)
+        try:
+            page.locator('#loading-overlay').wait_for(state="hidden", timeout=10000)
+        except Exception:
+            pass
+        time.sleep(1)
+        return True
+    except Exception as e:
+        print(f"[SELANCAR-WARN] Gagal refresh real-time: {e}")
+        return False
+
 def to_float(val, default=0.0):
     try:
         if val is None:

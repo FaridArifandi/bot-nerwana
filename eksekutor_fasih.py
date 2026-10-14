@@ -866,6 +866,68 @@ def tambah_catatan_field(page, container, kode_catatan):
 
     return False
 
+def cek_catatan_eksisting_27a(page, container=None):
+    """
+    Memeriksa apakah pada Isian 27a sudah terdapat catatan '#DC' / 'DC'.
+    Jika sudah ada, mengembalikan (True, isi_catatan) agar assignment dilewati
+    dan tidak diedit ganda / bentrok antar 2 komputer.
+    """
+    if not container:
+        container = cari_container_isian_27a(page)
+    if not container:
+        return False, ""
+
+    try:
+        container.scroll_into_view_if_needed()
+        time.sleep(0.3)
+
+        btn_catatan = None
+        all_btns = container.locator('button[title="Catatan"], button[aria-label="Catatan"], button:has-text("Catatan")').all()
+        for b in all_btns:
+            try:
+                if b.is_visible():
+                    btn_catatan = b
+                    break
+            except Exception:
+                pass
+
+        if not btn_catatan:
+            return False, ""
+
+        btn_catatan.scroll_into_view_if_needed()
+        time.sleep(0.3)
+        btn_catatan.click(timeout=3000)
+        time.sleep(0.8)
+
+        dialog = page.locator('div[role="dialog"]').last
+        if dialog.count() == 0 or not dialog.is_visible():
+            return False, ""
+
+        textarea = dialog.locator('textarea')
+        isi = ""
+        if textarea.count() > 0 and textarea.first.is_visible():
+            isi = (textarea.first.input_value() or "").strip()
+
+        # Tutup dialog catatan
+        btn_close = dialog.locator('button[title="Dismiss"], button:has-text("Close"), button:has-text("Batal"), button:has-text("Tutup")')
+        if btn_close.count() > 0 and btn_close.first.is_visible():
+            btn_close.first.click()
+        else:
+            page.keyboard.press("Escape")
+        time.sleep(0.5)
+
+        # Periksa apakah ada pola DC (misal: #DC_01, DC_01, #DC, dll)
+        if "DC" in isi.upper():
+            return True, isi
+        return False, isi
+    except Exception as e:
+        print(f"[INFO] Pengecekan catatan eksisting 27a: {e}")
+        try:
+            page.keyboard.press("Escape")
+        except:
+            pass
+        return False, ""
+
 def buka_menu_catatan(page):
     """Navigasi ke menu CATATAN."""
     print("[FASIH] Navigasi ke menu CATATAN...")
@@ -1221,8 +1283,20 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             log_audit(aid, nama, "KBLI_CHECK", status_sebelumnya="APPROVED", status_baru="KBLI_MISMATCH", pesan=f"Kategori di FASIH bukan {kategori}")
             return "KBLI_MISMATCH", None
 
+        # 4.5 Anti-Tabrakan / Anti-Edit Ulang: Cek apakah Isian 27a sudah memiliki remark #DC
+        c_27a_cek = cari_container_isian_27a(page)
+        ada_dc, teks_dc = cek_catatan_eksisting_27a(page, c_27a_cek)
+        if ada_dc:
+            print(f"\n[FASIH-SKIP] Isian 27a SUDAH berisi catatan DC: '{teks_dc}'!")
+            print("             Assignment ini sudah selesai diperbaiki sebelumnya.")
+            print("             Dilewati agar tidak terjadi penimpaan / edit ganda.")
+            conn.execute("UPDATE kasus_nerwana SET status = 'COMPLETED', tindak_lanjut = 'sudah_direvisi', alasan_review = ? WHERE assignment_id = ? AND nama_usaha = ?", (f"Sudah ada remark: {teks_dc}", aid, nama))
+            conn.commit()
+            log_audit(aid, nama, "ALREADY_HAS_DC_REMARK", status_sebelumnya="APPROVED", status_baru="COMPLETED", pesan=f"Isian 27a sudah berisi remark '{teks_dc}'")
+            return "ALREADY_COMPLETED", teks_dc
+
         # 5. Isi Nilai Baru (dengan event keyboard natural)
-        c_pbj_found = None
+        c_pbj_found = c_27a_cek
         if prod_baru != row['prod']:
             cari_dan_isi_field(page, "Biaya produksi", prod_baru)
 
@@ -1460,7 +1534,8 @@ def main():
             NerwanaManager, 
             buka_dan_siapkan_selancar, 
             cari_target_di_tabel_selancar, 
-            lanjut_halaman_berikutnya_selancar
+            lanjut_halaman_berikutnya_selancar,
+            refresh_selancar_realtime
         )
         nerwana_updater = NerwanaManager(context)
         selancar_page = nerwana_updater.get_or_create_page()
@@ -1477,8 +1552,14 @@ def main():
 
         # Pakai ulang SATU tab FASIH (tidak buka tutup tab per assignment)
         fasih_page = None
+        first_run = True
 
         while sukses < limit:
+            # 1.5 Real-Time Sync: Refresh tabel Selancar agar update dari komputer lain langsung terdeteksi
+            if not first_run:
+                refresh_selancar_realtime(selancar_page, kategori=kategori_aktif)
+            first_run = False
+
             conn = get_connection()
             # 2. Cari baris di tabel Selancar secara urut (baris 1, 2, dst)
             target_info = cari_target_di_tabel_selancar(selancar_page, conn, session_skip_aids=session_skip_aids, kategori=kategori_aktif)
@@ -1592,7 +1673,16 @@ def main():
                     # JEDA WAJAR: 4-7 detik acak antar assignment
                     jeda = random.uniform(4.0, 7.0)
                     print(f"[JEDA] Menunggu {jeda:.1f} detik sebelum assignment berikutnya...")
-                    time.sleep(jeda)
+            elif hasil == "ALREADY_COMPLETED":
+                di_skip += 1
+                session_skip_aids.add(aid)
+                print(f"[SELANCAR] Memastikan status assignment '{nama}' menjadi 'Sudah direvisi' di Selancar...")
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status="sudah_direvisi")
+                conn = get_connection()
+                conn.execute("UPDATE kasus_nerwana SET tindak_lanjut = 'sudah_direvisi', status = 'COMPLETED' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
+                conn.commit()
+                conn.close()
+                time.sleep(1.0)
             elif hasil in ["SKIPPED_FASIH_ERROR", "KBLI_MISMATCH", "CANCELLED"]:
                 di_skip += 1
                 session_skip_aids.add(aid)
