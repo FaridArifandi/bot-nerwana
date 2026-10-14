@@ -7,28 +7,31 @@ Otomatisasi pengolahan data flagging Selancar Nerwana BPS dan sinkronisasi korek
 ## 📋 Daftar Isi
 - [Fitur Utama](#-fitur-utama)
 - [Panduan Pemula: Setup Laptop Baru / Kosong (Tanpa Python & VS Code)](#-panduan-pemula-setup-laptop-baru--kosong)
-  - [Langkah 1: Instalasi Python](#langkah-1-instalasi-python-di-laptop-baru)
-  - [Langkah 2: Membuka Terminal di Folder Bot](#langkah-2-membuka-terminal-command-prompt-di-folder-bot)
-  - [Langkah 3: Install Library Pendukung](#langkah-3-install-library-pendukung)
+  - [Langkah 1: Instalasi Python di Laptop Baru](#langkah-1-instalasi-python-di-laptop-baru)
+  - [Langkah 2: Membuka Folder Bot di Terminal / CMD](#langkah-2-membuka-folder-bot-di-terminal-command-prompt)
+  - [Langkah 3: Install Dependensi & Playwright (PENTING!)](#langkah-3-install-dependensi--playwright-penting)
   - [Langkah 4: Konfigurasi Akun SSO BPS](#langkah-4-konfigurasi-akun-sso-bps)
 - [Cara Menjalankan Bot](#-cara-menjalankan-bot)
-  - [Metode A: Menggunakan Pintasan File Bat (Paling Praktis)](#metode-a-menggunakan-file-batch-paling-mudah)
-  - [Metode B: Menggunakan Terminal / Command Prompt Manual](#metode-b-menggunakan-terminal--command-prompt-manual)
+  - [Metode A: Menggunakan File Batch (Rekomendasi - Paling Praktis)](#metode-a-menggunakan-file-batch-rekomendasi---paling-praktis)
+  - [Metode B: Menggunakan Terminal Manual](#metode-b-menggunakan-terminal--command-prompt-manual)
+- [Panduan Khusus Rekan Tim (Update / Git Pull)](#-panduan-khusus-rekan-tim-update--git-pull)
 - [Menu & Mode Eksekusi](#-menu--mode-eksekusi)
 - [Solusi Masalah Umum (Troubleshooting)](#-solusi-masalah-umum-troubleshooting)
 
 ---
 
 ## 🌟 Fitur Utama
-1. **Pemeriksaan & Filter Data Nerwana**:
-   - Terhubung langsung ke sesi browser Chrome aktif di halaman Selancar Nerwana.
-   - Menyaring data *DC Terkena Flag* (Kategori A, C, G, dll.).
-   - Mode Live On-the-Fly membaca urutan baris langsung dari tabel.
+1. **Master Threshold Dinamis & Hierarkis**:
+   - Terintegrasi langsung dengan Master Threshold resmi Selancar Nerwana.
+   - Pengecekan rasio bertingkat: **KBLI 5-Digit** $\rightarrow$ **KBLI 3-Digit** $\rightarrow$ **KBLI 2-Digit** $\rightarrow$ **Kategori Utama (A - T)**.
+   - Mendukung Kategori G (Perdagangan), Kategori A (Pertanian), Kategori C (Industri Pengolahan), dan seluruh sektor lainnya.
 2. **Kalkulator & Heuristik Usulan Nilai**:
-   - Rekonsiliasi otomatis nilai PBJ (Pengeluaran Barang dan Jasa), Produksi, dan Biaya Operasional sesuai formula validasi neraca.
-3. **Eksekutor FASIH SM**:
-   - Menangani pembukaan kuesioner, input angka secara natural (human-like typing), remark/catatan validasi, hingga auto-save/submit.
-   - Dilengkapi *Circuit Breaker WAF* untuk mendeteksi batas request server dan auto-cooldown.
+   - Menghitung koreksi nilai PBJ (Pengeluaran Barang dan Jasa), Produksi, dan Biaya Operasional secara presisi.
+   - Kolom acuan threshold tercantum di Excel review (`review_usulan.xlsx`).
+3. **Eksekutor FASIH SM (Playwright)**:
+   - Terhubung langsung ke Chrome aktif (*remote debugging port 9222*).
+   - Mode *Live On-The-Fly*: Menandai baris Selancar menjadi `'Akan direvisi'` sebelum membuka FASIH, lalu otomatis diubah ke `'Sudah direvisi'` setelah submit sukses.
+   - Pengetikan natural (human-like typing), remark validasi `#DC_01`, serta proteksi *Circuit Breaker WAF*.
 
 ---
 
@@ -48,35 +51,40 @@ Otomatisasi pengolahan data flagging Selancar Nerwana BPS dan sinkronisasi korek
 
 ---
 
-### Langkah 2: Membuka Terminal (Command Prompt) di Folder Bot
+### Langkah 2: Membuka Folder Bot di Terminal (Command Prompt)
 Anda **tidak perlu** menginstall VS Code. Cukup gunakan Command Prompt bawaan Windows:
 
 1. Buka folder tempat file bot ini berada lewat **File Explorer** Windows.
 2. Klik pada **Address Bar** di bagian atas jendela File Explorer (tempat tulisan path folder, misal `D:\Work\bot-nerwana`).
 3. Ketik kata: `cmd` lalu tekan tombol **Enter**.
-4. Jendela hitam Command Prompt (CMD) akan langsung terbuka tepat di dalam folder bot.
+4. Jendela hitam Command Prompt (CMD) akan langsung terbuka tepat di folder bot.
 5. Uji apakah Python sudah terdeteksi dengan mengetik:
    ```cmd
    python --version
    ```
-   *Jika muncul tulisan seperti `Python 3.12.x`, artinya Python sudah siap!*
+   *Jika muncul tulisan seperti `Python 3.12.x`, artinya Python sudah aktif!*
 
 ---
 
-### Langkah 3: Install Library Pendukung
-Di jendela Command Prompt yang sama, jalankan dua perintah berikut secara berurutan:
+### Langkah 3: Install Dependensi & Playwright (PENTING!)
+Pada Windows, sering kali perintah `playwright` langsung tidak dikenali jika direktori Scripts belum masuk PATH. Oleh karena itu, **selalu gunakan awalan `python -m`**:
+
+Jalankan 2 perintah berikut secara berurutan di CMD:
 
 1. **Install library Python:**
    ```cmd
-   pip install -r requirements.txt
+   python -m pip install -r requirements.txt
    ```
-   *(Tunggu proses unduh hingga selesai bertuliskan Successfully installed)*
+   *(Tunggu proses unduh library selesai)*
 
-2. **Install browser Playwright:**
+2. **Install browser Playwright (Chromium):**
    ```cmd
-   playwright install chromium
+   python -m playwright install chromium
    ```
-   *(Perintah ini akan mengunduh mesin browser Chromium yang dipakai bot)*
+   > 💡 **Kenapa harus `python -m playwright`?**  
+   > Supaya Windows langsung memanggil modul Playwright melalui Python secara resmi dan tidak muncul error `'playwright' is not recognized`.
+
+*(Atau cukup klik ganda file `0_install_dependensi.bat`, file tersebut akan menjalankan kedua langkah di atas secara otomatis).*
 
 ---
 
@@ -84,17 +92,16 @@ Di jendela Command Prompt yang sama, jalankan dua perintah berikut secara beruru
 Bot membutuhkan username dan password SSO BPS Anda untuk login otomatis ke FASIH.
 
 1. Di dalam folder bot, cari file bernama `sso.example`.
-2. Duplikat / copy file tersebut dan ubah namanya menjadi **`sso`** (tanpa ekstensi `.txt` atau `.example`).
-   - *Via Terminal:* Anda cukup ketik perintah:
+2. Salin (*copy*) file tersebut dan ubah namanya menjadi **`sso`** (tanpa ekstensi `.txt` atau `.example`).
+   - *Via Terminal:* Cukup ketik perintah:
      ```cmd
      copy sso.example sso
      ```
 3. Buka file `sso` menggunakan **Notepad**:
-   - Ketik di terminal:
-     ```cmd
-     notepad sso
-     ```
-4. Ganti teks di dalamnya dengan akun SSO Anda:
+   ```cmd
+   notepad sso
+   ```
+4. Ganti teks di dalamnya dengan akun SSO BPS Anda:
    ```ini
    username=nama_pengguna_sso_anda
    password=kata_sandi_sso_anda
@@ -107,35 +114,45 @@ Bot membutuhkan username dan password SSO BPS Anda untuk login otomatis ke FASIH
 
 Pastikan browser **Google Chrome** sudah terinstall di laptop Anda.
 
-### Metode A: Menggunakan File Batch (Paling Mudah)
-Di dalam folder bot sudah disediakan file bantuan yang bisa langsung diklik ganda:
+### Metode A: Menggunakan File Batch (Rekomendasi - Paling Praktis)
+Tinggal klik ganda file bantuan berurutan:
 
-1. **Klik ganda file `1_buka_chrome_debug.bat`**:
-   - Jendela Google Chrome khusus (debug mode) akan terbuka otomatis.
-   - **PENTING:** Jangan tutup jendela Chrome ini selama bot bekerja.
-   - Di jendela Chrome tersebut, Anda bisa membuka tab baru dan pastikan sudah login/buka halaman **Selancar Nerwana**.
-2. **Klik ganda file `2_jalankan_bot.bat`**:
-   - Terminal eksekutor akan terbuka otomatis dan menampilkan menu pilihan.
-   - Pilih menu yang diinginkan dengan mengetik angka lalu tekan Enter.
+1. **Klik ganda `0_install_dependensi.bat`** (Hanya sekali saja saat pertama kali pasang di laptop baru).
+2. **Klik ganda `1_buka_chrome_debug.bat`**:
+   - Google Chrome khusus (mode remote debugging port 9222) akan terbuka.
+   - **PENTING:** Jangan tutup jendela Chrome ini.
+   - Buka tab baru di Chrome tersebut dan pastikan sudah login/buka halaman **Selancar Nerwana**.
+3. **Klik ganda `2_jalankan_bot.bat`**:
+   - Terminal eksekutor bot akan berjalan dan menampilkan menu interaktif.
 
 ---
 
 ### Metode B: Menggunakan Terminal / Command Prompt Manual
 
-Jika ingin menjalankan perintah sendiri dari terminal:
-
 #### 1. Buka Google Chrome Mode Debug:
-Buka satu jendela CMD, lalu jalankan:
+Buka satu jendela CMD, jalankan:
 ```cmd
 "C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222 --user-data-dir="chrome_debug_profile" --start-maximized
 ```
-*(Catatan: Jika Chrome terpasang di Program Files 32-bit, ganti menjadi `C:\Program Files (x86)\...`)*
 
 #### 2. Jalankan Skrip Eksekutor:
-Buka jendela CMD kedua di folder bot (lihat Langkah 2), lalu jalankan:
+Buka jendela CMD kedua di folder bot, jalankan:
 ```cmd
 python eksekutor_fasih.py
 ```
+
+---
+
+## 👥 Panduan Khusus Rekan Tim (Update / Git Pull)
+Jika rekan kerja Anda sudah pernah mendownload repo ini dan ingin mengambil update terbaru (termasuk database dan review usulan terbaru):
+
+1. Buka CMD di folder bot rekan Anda.
+2. Jalankan:
+   ```cmd
+   git pull
+   python -m playwright install chromium
+   ```
+3. Langsung jalankan bot seperti biasa (`2_jalankan_bot.bat` atau `python eksekutor_fasih.py`).
 
 ---
 
@@ -143,39 +160,34 @@ python eksekutor_fasih.py
 
 Saat `eksekutor_fasih.py` berjalan, Anda akan diminta:
 1. **Memilih Lapangan Usaha / Kategori:**
-   - Masukkan kode huruf kategori, misal: `A`, `C`, `G`, dll.
+   - `[1]` Kategori G - Perdagangan *(Master Threshold KBLI 5/3/2/Kat)*
+   - `[2]` Kategori A - Pertanian *(Threshold 0.51 - 0.94)*
+   - `[3]` Kategori C - Industri Pengolahan *(Master Threshold KBLI 2/Kat)*
+   - *Atau ketik langsung huruf kategori lain: B, D, E, F, H, I, J, K, L, M, N, O, Q, R, S, T.*
 2. **Memilih Mode Kerja:**
-   - `[1] Uji 1 Baris Pertama - DRY-RUN` : Bot hanya mengisi angka di form FASIH untuk pengujian, **tanpa** menekan tombol submit.
-   - `[2] Uji 1 Baris Pertama - SUBMIT SUNGGUHAN` : Bot mengisi form dan langsung melakukan **Submit** pada 1 sampel terpilih.
-   - `[3] Eksekusi Batch DRY-RUN` : Menjalankan otomatis berurutan (bisa diset 1-10 baris) dalam mode simulasi/uji coba.
-   - `[4] Eksekusi Batch SUBMIT SUNGGUHAN` : Menjalankan otomatis batch produksi dengan submit tersimpan ke server FASIH.
+   - `[1] Uji 1 Baris Pertama - DRY-RUN` : Mengisi form FASIH untuk pengujian, **tanpa** submit.
+   - `[2] Uji 1 Baris Pertama - SUBMIT SUNGGUHAN` : Mengisi form dan langsung submit 1 baris.
+   - `[3] Eksekusi Batch DRY-RUN` : Menjalankan otomatis berurutan (1-50 baris) mode uji coba.
+   - `[4] Eksekusi Batch SUBMIT SUNGGUHAN` : Menjalankan otomatis batch submit tersimpan ke server.
 
 ---
 
 ## ❓ Solusi Masalah Umum (Troubleshooting)
 
-### 1. Pesan `'python' is not recognized as an internal or external command`
-- **Penyebab:** Kotak *"Add python.exe to PATH"* lupa dicentang saat install Python.
-- **Solusi:**
-  1. Jalankan kembali file installer Python.
-  2. Pilih menu **Modify**, lalu pastikan opsi **Add Python to environment variables** tercentang.
-  3. Tutup dan buka kembali jendela Command Prompt (CMD).
-
-### 2. Error `playwright._impl._errors.TargetClosedError` atau Browser Gagal Konek
-- **Penyebab:** Google Chrome mode remote debugging belum dijalankan atau port 9222 tertutup.
-- **Solusi:**
-  1. Tutup seluruh aplikasi Google Chrome yang sedang aktif.
-  2. Jalankan kembali `1_buka_chrome_debug.bat` (atau perintah manual remote-debugging).
-  3. Pastikan jendela Chrome debug tetap terbuka di layar.
-
-### 3. File `sso` berubah nama menjadi `sso.txt`
-- **Penyebab:** Notepad otomatis menambahkan akhiran `.txt` jika ekstensi file disembunyikan Windows.
-- **Solusi:**
-  Buka CMD di folder bot, lalu jalankan perintah berikut untuk memastikan namanya tepat:
+### 1. Pesan `'playwright' is not recognized as an internal or external command`
+- **Penyebab:** Eksekutabel Playwright belum masuk ke PATH Windows.
+- **Solusi:** Jalankan instalasi menggunakan modul Python secara eksplisit:
   ```cmd
-  ren sso.txt sso
+  python -m playwright install chromium
   ```
 
-### 4. Eksekutor Terhenti / Ingin Berhenti di Tengah Jalan
-- Untuk menghentikan bot yang sedang berjalan, klik pada jendela terminal bot lalu tekan kombinasi tombol:
-  **`Ctrl + C`**
+### 2. Pesan `'python' is not recognized as an internal or external command`
+- **Penyebab:** Opsi *"Add python.exe to PATH"* lupa dicentang saat install Python.
+- **Solusi:** Jalankan installer Python kembali, pilih **Modify**, lalu centang **Add Python to environment variables**.
+
+### 3. Error `TargetClosedError` / Gagal Terhubung ke Port 9222
+- **Penyebab:** Google Chrome remote debugging belum dibuka sebelum bot dijalankan.
+- **Solusi:** Tutup seluruh Google Chrome yang sedang aktif, lalu buka kembali lewat `1_buka_chrome_debug.bat`.
+
+### 4. Menghentikan Bot
+- Klik pada jendela terminal bot, lalu tekan kombinasi tombol: **`Ctrl + C`**.
