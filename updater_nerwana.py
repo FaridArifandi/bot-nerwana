@@ -275,7 +275,8 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                     'output': output,
                     'ntb': ntb,
                     'rasio': rasio,
-                    'kategori': kat
+                    'kategori': kat,
+                    'kbli': kbli
                 }
                 usulan = calculate_usulan(calc_input, kategori=kat)
 

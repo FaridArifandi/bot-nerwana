@@ -5,10 +5,11 @@ from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 from database import DB_PATH, get_connection
+from threshold_manager import get_threshold
 
 EXCEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "review_usulan.xlsx")
 
-def calculate_usulan(row, kategori="G"):
+def calculate_usulan(row, kategori=None):
     pbj = float(row['pbj'] or 0)
     prod = float(row['prod'] or 0)
     ops = float(row['ops'] or 0)
@@ -17,22 +18,20 @@ def calculate_usulan(row, kategori="G"):
     ntb = float(row['ntb'] or 0)
     output = float(row['output'] or 0)
     
-    kat = str(row.get('kategori') if isinstance(row, dict) and row.get('kategori') else kategori or "G").upper().strip()
+    kat = str(row.get('kategori') if isinstance(row, dict) and row.get('kategori') else (kategori or "G")).upper().strip()
+    kbli = str(row.get('kbli') if isinstance(row, dict) and row.get('kbli') else "").strip()
     
-    # Konfigurasi Threshold & Target per Kategori
-    if kat == "G":
-        MIN_RATIO = 0.64
-        MAX_RATIO = 0.78
-        TARGET_RATIO = 0.71
-    else:
-        # Default Kategori A
-        MIN_RATIO = 0.51
-        MAX_RATIO = 0.94
-        TARGET_RATIO = 0.70
+    # Resolusi Threshold Hierarkis Dinamis (KBLI 5 -> 3 -> 2 -> Kategori -> Generic)
+    thresh = get_threshold(kat, kbli, skala="mikro_kecil")
+    MIN_RATIO = thresh['min']
+    MAX_RATIO = thresh['max']
+    TARGET_RATIO = thresh['target']
+    THRESH_LEVEL = thresh['level']
+    THRESH_LABEL = f"{THRESH_LEVEL} [{MIN_RATIO:.2f} - {MAX_RATIO:.2f}]"
     
     # 1. PENGECUALIAN KHUSUS (NEED_REVIEW)
     if pbj == 0 and (prod > 0 or ops > 0 or beli > 0):
-        alasan = "PBJ = 0 (pengeluaran ada). Indikasi belum ada omzet / baru beroperasi." if kat == "G" else "PBJ = 0 (pengeluaran ada). Indikasi belum panen / gagal panen / banjir."
+        alasan = f"PBJ = 0 (pengeluaran ada). Indikasi belum ada omzet / baru beroperasi / gagal panen ({THRESH_LABEL})."
         return {
             'pbj_baru': pbj,
             'prod_baru': prod,
@@ -41,7 +40,8 @@ def calculate_usulan(row, kategori="G"):
             'skor': 50,
             'alasan': alasan,
             'kode_catatan': "",
-            'status': "NEED_REVIEW"
+            'status': "NEED_REVIEW",
+            'acuan_threshold': THRESH_LABEL
         }
         
     if pbj == 0 and prod == 0 and ops == 0 and beli == 0:
@@ -51,12 +51,13 @@ def calculate_usulan(row, kategori="G"):
             'ops_baru': ops,
             'rasio_baru': 0,
             'skor': 30,
-            'alasan': "Semua nilai biaya & pendapatan 0. Butuh konfirmasi lapangan.",
+            'alasan': f"Semua nilai biaya & pendapatan 0 ({THRESH_LABEL}). Butuh konfirmasi lapangan.",
             'kode_catatan': "",
-            'status': "NEED_REVIEW"
+            'status': "NEED_REVIEW",
+            'acuan_threshold': THRESH_LABEL
         }
 
-    # Sudah di dalam rentang threshold
+    # 2. SUDAH DI DALAM RENTANG THRESHOLD
     if MIN_RATIO <= rasio <= MAX_RATIO:
         return {
             'pbj_baru': pbj,
@@ -64,9 +65,10 @@ def calculate_usulan(row, kategori="G"):
             'ops_baru': ops,
             'rasio_baru': rasio,
             'skor': 100,
-            'alasan': f"Sudah dalam rentang threshold Kategori {kat} ({MIN_RATIO:.2f} - {MAX_RATIO:.2f}). Tidak perlu perbaikan.",
+            'alasan': f"Sudah dalam rentang threshold {THRESH_LABEL}. Tidak perlu perbaikan.",
             'kode_catatan': "",
-            'status': "SKIP"
+            'status': "SKIP",
+            'acuan_threshold': THRESH_LABEL
         }
 
     # ----------------------------------------------------
@@ -89,12 +91,13 @@ def calculate_usulan(row, kategori="G"):
                         'ops_baru': ops,
                         'rasio_baru': cand_r,
                         'skor': 98,
-                        'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,})",
+                        'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,}) | {THRESH_LABEL}",
                         'kode_catatan': "#DC_01",
-                        'status': "PENDING"
+                        'status': "PENDING",
+                        'acuan_threshold': THRESH_LABEL
                     }
 
-        # 1b. Kasus rasio < 0.64: Menaikkan Pendapatan (Kuesioner 27.a / PBJ) ke target rasio (0.71)
+        # 1b. Kasus rasio < MIN_RATIO: Menaikkan Pendapatan (Kuesioner 27.a / PBJ) ke target rasio
         if rasio < MIN_RATIO:
             p_ops = prod + ops
             if p_ops > 0 or beli > 0:
@@ -113,12 +116,13 @@ def calculate_usulan(row, kategori="G"):
                             'ops_baru': ops,
                             'rasio_baru': cand_r,
                             'skor': skor,
-                            'alasan': f"Naikkan Pendapatan (Kues 27.a / PBJ) ke target rasio {cand_r:.2f} (Kategori G: threshold {MIN_RATIO}-{MAX_RATIO})",
+                            'alasan': f"Naikkan Pendapatan (Kues 27.a / PBJ) ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
                             'kode_catatan': "#DC_01",
-                            'status': "PENDING"
+                            'status': "PENDING",
+                            'acuan_threshold': THRESH_LABEL
                         }
 
-        # 1c. Kasus rasio > 0.78 (pengeluaran terlalu kecil)
+        # 1c. Kasus rasio > MAX_RATIO (pengeluaran terlalu kecil)
         if rasio > MAX_RATIO and pbj > 0:
             if ops > 0:
                 cand_ops = ops * 10
@@ -133,9 +137,10 @@ def calculate_usulan(row, kategori="G"):
                             'ops_baru': cand_ops,
                             'rasio_baru': cand_r,
                             'skor': 90,
-                            'alasan': f"Dugaan kekurangan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,})",
+                            'alasan': f"Dugaan kekurangan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,}) | {THRESH_LABEL}",
                             'kode_catatan': "#DC_01",
-                            'status': "PENDING"
+                            'status': "PENDING",
+                            'acuan_threshold': THRESH_LABEL
                         }
             return {
                 'pbj_baru': pbj,
@@ -143,9 +148,10 @@ def calculate_usulan(row, kategori="G"):
                 'ops_baru': ops,
                 'rasio_baru': rasio,
                 'skor': 45,
-                'alasan': f"Rasio di atas threshold ({rasio:.2f} > {MAX_RATIO}). Perlu tinjauan manual.",
+                'alasan': f"Rasio di atas threshold ({rasio:.2f} > {MAX_RATIO:.2f} | {THRESH_LABEL}). Perlu tinjauan manual.",
                 'kode_catatan': "",
-                'status': "NEED_REVIEW"
+                'status': "NEED_REVIEW",
+                'acuan_threshold': THRESH_LABEL
             }
 
         # Fallback G
@@ -155,116 +161,244 @@ def calculate_usulan(row, kategori="G"):
             'ops_baru': ops,
             'rasio_baru': rasio,
             'skor': 40,
-            'alasan': "Pola ekstrem/anomali Kategori G. Memerlukan tinjauan manual.",
+            'alasan': f"Pola ekstrem/anomali Kategori G ({THRESH_LABEL}). Memerlukan tinjauan manual.",
             'kode_catatan': "",
-            'status': "NEED_REVIEW"
+            'status': "NEED_REVIEW",
+            'acuan_threshold': THRESH_LABEL
         }
 
     # ----------------------------------------------------
-    # CABANG 2: LOGIKA KATEGORI A (PERTANIAN)
+    # CABANG 2: LOGIKA KATEGORI C (INDUSTRI PENGOLAHAN)
+    # Sensenya: Biaya bahan baku/produksi (prod) tinggi
     # ----------------------------------------------------
-    # 2. HEURISTIK 1: DUGAAN SALAH KETIK NOL (x10 atau /10)
-    # 2a. Biaya Produksi kelebihan nol (prod / 10)
+    if kat == "C":
+        # 2a. Biaya Produksi kelebihan nol (prod / 10)
+        if prod >= 10000:
+            cand_prod = round(prod / 10 / 1000) * 1000
+            cand_ntb = pbj - cand_prod - ops - beli
+            cand_out = pbj - beli
+            if cand_out > 0:
+                cand_r = cand_ntb / cand_out
+                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                    return {
+                        'pbj_baru': pbj,
+                        'prod_baru': cand_prod,
+                        'ops_baru': ops,
+                        'rasio_baru': cand_r,
+                        'skor': 98,
+                        'alasan': f"Dugaan kelebihan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,}) | {THRESH_LABEL}",
+                        'kode_catatan': "#DC_01",
+                        'status': "PENDING",
+                        'acuan_threshold': THRESH_LABEL
+                    }
+
+        # 2b. Biaya Operasional kelebihan nol (ops / 10)
+        if ops >= 10000:
+            cand_ops = round(ops / 10 / 1000) * 1000
+            cand_ntb = pbj - prod - cand_ops - beli
+            cand_out = pbj - beli
+            if cand_out > 0:
+                cand_r = cand_ntb / cand_out
+                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                    return {
+                        'pbj_baru': pbj,
+                        'prod_baru': prod,
+                        'ops_baru': cand_ops,
+                        'rasio_baru': cand_r,
+                        'skor': 95,
+                        'alasan': f"Dugaan kelebihan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,}) | {THRESH_LABEL}",
+                        'kode_catatan': "#DC_01",
+                        'status': "PENDING",
+                        'acuan_threshold': THRESH_LABEL
+                    }
+
+        # 2c. PBJ kekurangan nol (pbj * 10)
+        if pbj > 0:
+            cand_pbj = pbj * 10
+            cand_ntb = cand_pbj - prod - ops - beli
+            cand_out = cand_pbj - beli
+            if cand_out > 0:
+                cand_r = cand_ntb / cand_out
+                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                    return {
+                        'pbj_baru': cand_pbj,
+                        'prod_baru': prod,
+                        'ops_baru': ops,
+                        'rasio_baru': cand_r,
+                        'skor': 96,
+                        'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,}) | {THRESH_LABEL}",
+                        'kode_catatan': "#DC_01",
+                        'status': "PENDING",
+                        'acuan_threshold': THRESH_LABEL
+                    }
+
+        # 2d. Jika rasio < MIN_RATIO: Naikkan PBJ ke target rasio
+        if rasio < MIN_RATIO:
+            total_exp = prod + ops + beli
+            if total_exp > 0:
+                ideal_pbj = total_exp / (1.0 - TARGET_RATIO)
+                cand_pbj = round(ideal_pbj / 1000) * 1000
+                cand_ntb = cand_pbj - prod - ops - beli
+                cand_out = cand_pbj - beli
+                if cand_out > 0:
+                    cand_r = cand_ntb / cand_out
+                    if MIN_RATIO <= cand_r <= MAX_RATIO:
+                        return {
+                            'pbj_baru': cand_pbj,
+                            'prod_baru': prod,
+                            'ops_baru': ops,
+                            'rasio_baru': cand_r,
+                            'skor': 85,
+                            'alasan': f"Naikkan PBJ ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
+                            'kode_catatan': "#DC_01",
+                            'status': "PENDING",
+                            'acuan_threshold': THRESH_LABEL
+                        }
+
+        # 2e. Jika rasio > MAX_RATIO: Pengeluaran terlalu kecil, sesuaikan biaya produksi
+        if rasio > MAX_RATIO and pbj > 0:
+            target_exp = pbj * (1.0 - TARGET_RATIO)
+            cand_prod = round(target_exp / 1000) * 1000
+            cand_ntb = pbj - cand_prod - ops - beli
+            cand_out = pbj - beli
+            if cand_out > 0:
+                cand_r = cand_ntb / cand_out
+                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                    return {
+                        'pbj_baru': pbj,
+                        'prod_baru': cand_prod,
+                        'ops_baru': ops,
+                        'rasio_baru': cand_r,
+                        'skor': 80,
+                        'alasan': f"Sesuaikan biaya produksi ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
+                        'kode_catatan': "#DC_01",
+                        'status': "PENDING",
+                        'acuan_threshold': THRESH_LABEL
+                    }
+
+        # Fallback C
+        return {
+            'pbj_baru': pbj,
+            'prod_baru': prod,
+            'ops_baru': ops,
+            'rasio_baru': rasio,
+            'skor': 40,
+            'alasan': f"Pola ekstrem/anomali Kategori C ({THRESH_LABEL}). Memerlukan tinjauan manual.",
+            'kode_catatan': "",
+            'status': "NEED_REVIEW",
+            'acuan_threshold': THRESH_LABEL
+        }
+
+    # ----------------------------------------------------
+    # CABANG 3: LOGIKA KATEGORI A (PERTANIAN) & KATEGORI LAINNYA
+    # ----------------------------------------------------
+    # 3a. Biaya Produksi kelebihan nol (prod / 10)
     if prod >= 10000:
         cand_prod = round(prod / 10 / 1000) * 1000
         cand_ntb = pbj - cand_prod - ops - beli
         cand_out = pbj - beli
         if cand_out > 0:
             cand_r = cand_ntb / cand_out
-            if 0.55 <= cand_r <= 0.90:
+            if MIN_RATIO <= cand_r <= MAX_RATIO:
                 return {
                     'pbj_baru': pbj,
                     'prod_baru': cand_prod,
                     'ops_baru': ops,
                     'rasio_baru': cand_r,
                     'skor': 98,
-                    'alasan': f"Dugaan kelebihan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,})",
+                    'alasan': f"Dugaan kelebihan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,}) | {THRESH_LABEL}",
                     'kode_catatan': "#DC_01",
-                    'status': "PENDING"
+                    'status': "PENDING",
+                    'acuan_threshold': THRESH_LABEL
                 }
 
-    # 2b. Biaya Operasional kelebihan nol (ops / 10)
+    # 3b. Biaya Operasional kelebihan nol (ops / 10)
     if ops >= 10000:
         cand_ops = round(ops / 10 / 1000) * 1000
         cand_ntb = pbj - prod - cand_ops - beli
         cand_out = pbj - beli
         if cand_out > 0:
             cand_r = cand_ntb / cand_out
-            if 0.55 <= cand_r <= 0.90:
+            if MIN_RATIO <= cand_r <= MAX_RATIO:
                 return {
                     'pbj_baru': pbj,
                     'prod_baru': prod,
                     'ops_baru': cand_ops,
                     'rasio_baru': cand_r,
                     'skor': 95,
-                    'alasan': f"Dugaan kelebihan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,})",
+                    'alasan': f"Dugaan kelebihan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,}) | {THRESH_LABEL}",
                     'kode_catatan': "#DC_01",
-                    'status': "PENDING"
+                    'status': "PENDING",
+                    'acuan_threshold': THRESH_LABEL
                 }
 
-    # 2c. PBJ kekurangan nol (pbj * 10)
+    # 3c. PBJ kekurangan nol (pbj * 10)
     if pbj > 0:
         cand_pbj = pbj * 10
         cand_ntb = cand_pbj - prod - ops - beli
         cand_out = cand_pbj - beli
         if cand_out > 0:
             cand_r = cand_ntb / cand_out
-            if 0.55 <= cand_r <= 0.90:
+            if MIN_RATIO <= cand_r <= MAX_RATIO:
                 return {
                     'pbj_baru': cand_pbj,
                     'prod_baru': prod,
                     'ops_baru': ops,
                     'rasio_baru': cand_r,
                     'skor': 96,
-                    'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,})",
+                    'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,}) | {THRESH_LABEL}",
                     'kode_catatan': "#DC_01",
-                    'status': "PENDING"
+                    'status': "PENDING",
+                    'acuan_threshold': THRESH_LABEL
                 }
 
-    # 2d. Jika rasio > 0.94 (pengeluaran terlalu kecil) -> cek apakah prod * 10
-    if rasio > 0.94 and prod > 0:
+    # 3d. Jika rasio > MAX_RATIO (pengeluaran terlalu kecil) -> cek apakah prod * 10
+    if rasio > MAX_RATIO and prod > 0:
         cand_prod = prod * 10
         cand_ntb = pbj - cand_prod - ops - beli
         cand_out = pbj - beli
         if cand_out > 0:
             cand_r = cand_ntb / cand_out
-            if 0.55 <= cand_r <= 0.90:
+            if MIN_RATIO <= cand_r <= MAX_RATIO:
                 return {
                     'pbj_baru': pbj,
                     'prod_baru': cand_prod,
                     'ops_baru': ops,
                     'rasio_baru': cand_r,
                     'skor': 92,
-                    'alasan': f"Dugaan kekurangan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,})",
+                    'alasan': f"Dugaan kekurangan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,}) | {THRESH_LABEL}",
                     'kode_catatan': "#DC_01",
-                    'status': "PENDING"
+                    'status': "PENDING",
+                    'acuan_threshold': THRESH_LABEL
                 }
 
-    # 3. HEURISTIK 2: NAIKKAN PENDAPATAN (PBJ)
+    # 3e. Menaikkan pendapatan (PBJ) ke TARGET_RATIO
     total_exp = prod + ops + beli
-    if rasio < 0.51:
+    if rasio < MIN_RATIO:
         if total_exp > 0:
             ideal_pbj = total_exp / (1.0 - TARGET_RATIO)
             cand_pbj = round(ideal_pbj / 1000) * 1000
             cand_ntb = cand_pbj - prod - ops - beli
             cand_out = cand_pbj - beli
-            cand_r = cand_ntb / cand_out
-            if 0.55 <= cand_r <= 0.85:
-                ratio_kenaikan = cand_pbj / pbj if pbj > 0 else 999
-                skor = 85 if ratio_kenaikan <= 5 else 78
-                return {
-                    'pbj_baru': cand_pbj,
-                    'prod_baru': prod,
-                    'ops_baru': ops,
-                    'rasio_baru': cand_r,
-                    'skor': skor,
-                    'alasan': f"Naikkan PBJ ke target rasio {cand_r:.2f} (asumsi pengeluaran riil, omzet under-reported)",
-                    'kode_catatan': "#DC_01",
-                    'status': "PENDING"
-                }
+            if cand_out > 0:
+                cand_r = cand_ntb / cand_out
+                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                    ratio_kenaikan = cand_pbj / pbj if pbj > 0 else 999
+                    skor = 85 if ratio_kenaikan <= 5 else 78
+                    return {
+                        'pbj_baru': cand_pbj,
+                        'prod_baru': prod,
+                        'ops_baru': ops,
+                        'rasio_baru': cand_r,
+                        'skor': skor,
+                        'alasan': f"Naikkan PBJ ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
+                        'kode_catatan': "#DC_01",
+                        'status': "PENDING",
+                        'acuan_threshold': THRESH_LABEL
+                    }
 
-    # 4. HEURISTIK 3: PENYESUAIAN PENGELUARAN TURUN
-    if rasio < 0.51 and pbj > 0:
+    # 3f. Penyesuaian Pengeluaran Turun proporsional
+    if rasio < MIN_RATIO and pbj > 0:
         target_exp = pbj * (1.0 - TARGET_RATIO)
         cur_exp = prod + ops
         if cur_exp > 0:
@@ -273,48 +407,53 @@ def calculate_usulan(row, kategori="G"):
             cand_ops = round((ops * scale) / 1000) * 1000
             cand_ntb = pbj - cand_prod - cand_ops - beli
             cand_out = pbj - beli
-            cand_r = cand_ntb / cand_out
-            if 0.55 <= cand_r <= 0.85:
-                return {
-                    'pbj_baru': pbj,
-                    'prod_baru': cand_prod,
-                    'ops_baru': cand_ops,
-                    'rasio_baru': cand_r,
-                    'skor': 80,
-                    'alasan': f"Turunkan pengeluaran proporsional ke target rasio {cand_r:.2f}",
-                    'kode_catatan': "#DC_01",
-                    'status': "PENDING"
-                }
+            if cand_out > 0:
+                cand_r = cand_ntb / cand_out
+                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                    return {
+                        'pbj_baru': pbj,
+                        'prod_baru': cand_prod,
+                        'ops_baru': cand_ops,
+                        'rasio_baru': cand_r,
+                        'skor': 80,
+                        'alasan': f"Turunkan pengeluaran proporsional ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
+                        'kode_catatan': "#DC_01",
+                        'status': "PENDING",
+                        'acuan_threshold': THRESH_LABEL
+                    }
 
-    # 5. HEURISTIK 4: RASIO TERLALU TINGGI (> 0.94)
-    if rasio > 0.94 and pbj > 0:
+    # 3g. Rasio Terlalu Tinggi (> MAX_RATIO)
+    if rasio > MAX_RATIO and pbj > 0:
         target_exp = pbj * (1.0 - TARGET_RATIO)
         cand_prod = round(target_exp / 1000) * 1000
         cand_ntb = pbj - cand_prod - ops - beli
         cand_out = pbj - beli
-        cand_r = cand_ntb / cand_out
-        if 0.55 <= cand_r <= 0.85:
-            return {
-                'pbj_baru': pbj,
-                'prod_baru': cand_prod,
-                'ops_baru': ops,
-                'rasio_baru': cand_r,
-                'skor': 75,
-                'alasan': f"Naikkan biaya produksi (pengeluaran awal terlalu mendekati nol, target rasio {cand_r:.2f})",
-                'kode_catatan': "#DC_01",
-                'status': "PENDING"
-            }
+        if cand_out > 0:
+            cand_r = cand_ntb / cand_out
+            if MIN_RATIO <= cand_r <= MAX_RATIO:
+                return {
+                    'pbj_baru': pbj,
+                    'prod_baru': cand_prod,
+                    'ops_baru': ops,
+                    'rasio_baru': cand_r,
+                    'skor': 75,
+                    'alasan': f"Naikkan biaya produksi ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
+                    'kode_catatan': "#DC_01",
+                    'status': "PENDING",
+                    'acuan_threshold': THRESH_LABEL
+                }
 
-    # Fallback
+    # Fallback Umum
     return {
         'pbj_baru': pbj,
         'prod_baru': prod,
         'ops_baru': ops,
         'rasio_baru': rasio,
         'skor': 40,
-        'alasan': "Pola ekstrem/anomali. Memerlukan tinjauan manual.",
+        'alasan': f"Pola ekstrem/anomali ({THRESH_LABEL}). Memerlukan tinjauan manual.",
         'kode_catatan': "",
-        'status': "NEED_REVIEW"
+        'status': "NEED_REVIEW",
+        'acuan_threshold': THRESH_LABEL
     }
 
 def process_and_export():
@@ -389,7 +528,8 @@ def process_and_export():
         "PBJ_LAMA", "PROD_LAMA", "OPS_LAMA", "NTB_LAMA", "RASIO_LAMA",
         "PBJ_USULAN", "PROD_USULAN", "OPS_USULAN", "NTB_USULAN", "RASIO_BARU",
         "SKOR", "KODE_CATATAN", "ALASAN_USULAN", "STATUS",
-        "APPROVED", "CATATAN_REVIEWER", "TINDAK_LANJUT_NERWANA", "LINK_FASIH"
+        "APPROVED", "CATATAN_REVIEWER", "TINDAK_LANJUT_NERWANA", "LINK_FASIH",
+        "ACUAN_THRESHOLD"
     ]
     
     ws.append(headers)
@@ -465,7 +605,8 @@ def process_and_export():
             approved_val,
             "", # CATATAN_REVIEWER
             r['tindak_lanjut'] or "belum",
-            r['link_fasih']
+            r['link_fasih'],
+            u.get('acuan_threshold', '')
         ]
         
         ws.append(data_row)
@@ -494,10 +635,10 @@ def process_and_export():
 
             # Conditional Colors
             if col_idx == 10: # RASIO LAMA
-                if r['rasio'] < 0.51 or r['rasio'] > 0.94:
+                if r['rasio'] < 0.50 or r['rasio'] > 0.90:
                     c.font = font_red
             elif col_idx == 15: # RASIO BARU
-                if 0.55 <= u['rasio_baru'] <= 0.85:
+                if 0.50 <= u['rasio_baru'] <= 0.90:
                     c.fill = fill_green_safe
                     c.font = font_bold
             elif col_idx == 19: # STATUS
@@ -514,7 +655,7 @@ def process_and_export():
         ws.row_dimensions[row_num].height = 20
         row_num += 1
 
-    # Freeze panes at C2 (baris 1 dan kolom 1-3 tetap terlihat)
+    # Freeze panes at D2 (baris 1 dan kolom A-C tetap terlihat)
     ws.freeze_panes = 'D2'
     
     # Auto-fit column widths
@@ -534,6 +675,7 @@ def process_and_export():
     ws.column_dimensions['R'].width = 45  # ALASAN_USULAN
     ws.column_dimensions['T'].width = 12  # APPROVED
     ws.column_dimensions['W'].width = 30  # LINK_FASIH
+    ws.column_dimensions['X'].width = 28  # ACUAN_THRESHOLD
 
     wb.save(EXCEL_PATH)
     conn.close()

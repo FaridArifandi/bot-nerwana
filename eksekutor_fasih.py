@@ -1395,11 +1395,23 @@ def main():
     print("         secara urut di layar (tanpa scraping awal & tanpa lompat-lompat).")
 
     print("\nPilih Kategori Lapangan Usaha:")
-    print("  [1] Kategori G - Perdagangan (Threshold 0.64 - 0.78) [Default]")
+    print("  [1] Kategori G - Perdagangan (Master Threshold KBLI 5/3/2/Kat) [Default]")
     print("  [2] Kategori A - Pertanian (Threshold 0.51 - 0.94)")
-    kat_choice = input("Masukkan pilihan kategori [1/2] (default 1 - G): ").strip() or "1"
-    kategori_aktif = "A" if kat_choice == "2" else "G"
-    print(f"[KATEGORI AKTIF] Menggunakan Kategori {kategori_aktif}")
+    print("  [3] Kategori C - Industri Pengolahan (Master Threshold KBLI 2/Kat)")
+    print("  [Atau ketik langsung huruf kategori: B, D, E, F, H, I, J, K, L, M, N, O, Q, R, S, T]")
+    kat_choice = input("Masukkan pilihan kategori (default 1 - G): ").strip() or "1"
+    if kat_choice == "1":
+        kategori_aktif = "G"
+    elif kat_choice == "2":
+        kategori_aktif = "A"
+    elif kat_choice == "3":
+        kategori_aktif = "C"
+    else:
+        kategori_aktif = kat_choice.upper()
+
+    from threshold_manager import get_threshold
+    info_kat = get_threshold(kategori_aktif)
+    print(f"[KATEGORI AKTIF] Menggunakan Kategori {kategori_aktif} ({info_kat.get('uraian', '')}) - Acuan Rasio: [{info_kat['min']:.2f} - {info_kat['max']:.2f}]")
 
     print("\nPilih Mode Operasi:")
     print("  [1] Uji 1 Baris Pertama - DRY-RUN (Isi form tapi TIDAK submit, konfirmasi manual)")

@@ -21,21 +21,35 @@ def sync_excel_to_db():
     approved_count = 0
     updated_count = 0
 
+    header_row = [str(cell or '').strip().upper() for cell in next(ws.iter_rows(min_row=1, max_row=1, values_only=True))]
+    col_map = {name: idx for idx, name in enumerate(header_row)}
+    
+    col_aid = col_map.get("ASSIGNMENT_ID", 1)
+    col_nama = col_map.get("NAMA_USAHA", 2)
+    col_pbj = col_map.get("PBJ_USULAN", 10)
+    col_prod = col_map.get("PROD_USULAN", 11)
+    col_ops = col_map.get("OPS_USULAN", 12)
+    col_rasio = col_map.get("RASIO_BARU", 14)
+    col_cat = col_map.get("KODE_CATATAN", 16)
+    col_alasan = col_map.get("ALASAN_USULAN", 17)
+    col_app = col_map.get("APPROVED", 19)
+    col_rev = col_map.get("CATATAN_REVIEWER", 20)
+
     for row_idx, row in enumerate(ws.iter_rows(min_row=2, values_only=True), start=2):
-        aid = str(row[1] or '').strip()
-        nama = str(row[2] or '').strip()
+        aid = str(row[col_aid] or '').strip() if col_aid < len(row) else ''
+        nama = str(row[col_nama] or '').strip() if col_nama < len(row) else ''
         if not aid or not nama:
             continue
 
         # Data usulan dari Excel (jika user ada mengedit di Excel)
-        pbj_usulan = float(row[10] or 0)
-        prod_usulan = float(row[11] or 0)
-        ops_usulan = float(row[12] or 0)
-        rasio_baru = float(row[14] or 0)
-        kode_catatan = str(row[16] or '').strip()
-        alasan = str(row[17] or '').strip()
-        approved_val = str(row[19] or '').strip().upper()
-        catatan_reviewer = str(row[20] or '').strip()
+        pbj_usulan = float(row[col_pbj] or 0) if col_pbj < len(row) else 0
+        prod_usulan = float(row[col_prod] or 0) if col_prod < len(row) else 0
+        ops_usulan = float(row[col_ops] or 0) if col_ops < len(row) else 0
+        rasio_baru = float(row[col_rasio] or 0) if col_rasio < len(row) else 0
+        kode_catatan = str(row[col_cat] or '').strip() if col_cat < len(row) else ''
+        alasan = str(row[col_alasan] or '').strip() if col_alasan < len(row) else ''
+        approved_val = str(row[col_app] or '').strip().upper() if col_app < len(row) else ''
+        catatan_reviewer = str(row[col_rev] or '').strip() if col_rev < len(row) else ''
 
         # Tentukan status baru
         if approved_val == 'Y':

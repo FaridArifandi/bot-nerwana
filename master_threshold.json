@@ -1,0 +1,3091 @@
+{
+  "kategori": {
+    "A": {
+      "kategori": "A",
+      "uraian": "Pertanian, Kehutanan, dan Perikanan",
+      "min": 0.51,
+      "max": 0.94,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "B": {
+      "kategori": "B",
+      "uraian": "Pertambangan dan Penggalian",
+      "min": 0.28,
+      "max": 0.81,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "C": {
+      "kategori": "C",
+      "uraian": "Industri Pengolahan",
+      "min": 0.15,
+      "max": 0.61,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "D": {
+      "kategori": "D",
+      "uraian": "Pengadaan Listrik, Gas, Uap, dan Udara Dingin",
+      "min": 0.13,
+      "max": 0.68,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "E": {
+      "kategori": "E",
+      "uraian": "Pengelolaan Air, Air Limbah, Sampah, dan Remediasi",
+      "min": 0.29,
+      "max": 0.47,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "F": {
+      "kategori": "F",
+      "uraian": "Konstruksi",
+      "min": 0.34,
+      "max": 0.44,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "G": {
+      "kategori": "G",
+      "uraian": "Perdagangan Besar dan Eceran; Reparasi Kendaraan",
+      "min": 0.64,
+      "max": 0.78,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "H": {
+      "kategori": "H",
+      "uraian": "Pengangkutan dan Pergudangan",
+      "min": 0.29,
+      "max": 0.64,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "I": {
+      "kategori": "I",
+      "uraian": "Penyediaan Akomodasi dan Makan Minum",
+      "min": 0.36,
+      "max": 0.69,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "J": {
+      "kategori": "J",
+      "uraian": "Penerbitan, Penyiaran, dan Produksi Konten",
+      "min": 0.36,
+      "max": 0.73,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "K": {
+      "kategori": "K",
+      "uraian": "Telekomunikasi, Pemrograman Komputer, dan Jasa Informasi",
+      "min": 0.5,
+      "max": 0.72,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "L": {
+      "kategori": "L",
+      "uraian": "Jasa Keuangan dan Asuransi",
+      "min": 0.46,
+      "max": 0.86,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "M": {
+      "kategori": "M",
+      "uraian": "Real Estat",
+      "min": 0.5,
+      "max": 0.99,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "N": {
+      "kategori": "N",
+      "uraian": "Jasa Profesional, Ilmiah, dan Teknis",
+      "min": 0.44,
+      "max": 0.57,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "O": {
+      "kategori": "O",
+      "uraian": "Jasa Persewaan, Ketenagakerjaan, dan Penunjang Usaha",
+      "min": 0.54,
+      "max": 0.66,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "Q": {
+      "kategori": "Q",
+      "uraian": "Pendidikan",
+      "min": 0.27,
+      "max": 0.82,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "R": {
+      "kategori": "R",
+      "uraian": "Kesehatan Manusia dan Kegiatan Sosial",
+      "min": 0.2,
+      "max": 0.6,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "S": {
+      "kategori": "S",
+      "uraian": "Kesenian, Olahraga, dan Rekreasi",
+      "min": 0.21,
+      "max": 0.57,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    },
+    "T": {
+      "kategori": "T",
+      "uraian": "Jasa Lainnya",
+      "min": 0.3,
+      "max": 0.69,
+      "sumber": "Slide Treshold NTB/Output SE2026"
+    }
+  },
+  "kategori_c_kbli2": {
+    "10": {
+      "kbli": "10",
+      "deskripsi": "Industri Makanan",
+      "besar_sedang": {
+        "min": 0.25,
+        "max": 0.57
+      },
+      "mikro_kecil": {
+        "min": 0.29,
+        "max": 0.54
+      }
+    },
+    "11": {
+      "kbli": "11",
+      "deskripsi": "Industri Minuman",
+      "besar_sedang": {
+        "min": 0.36,
+        "max": 0.73
+      },
+      "mikro_kecil": {
+        "min": 0.41,
+        "max": 0.76
+      }
+    },
+    "12": {
+      "kbli": "12",
+      "deskripsi": "Industri Pengolahan Tembakau",
+      "besar_sedang": {
+        "min": 0.33,
+        "max": 0.71
+      },
+      "mikro_kecil": {
+        "min": 0.34,
+        "max": 0.63
+      }
+    },
+    "13": {
+      "kbli": "13",
+      "deskripsi": "Industri Tekstil",
+      "besar_sedang": {
+        "min": 0.33,
+        "max": 0.69
+      },
+      "mikro_kecil": {
+        "min": 0.42,
+        "max": 0.78
+      }
+    },
+    "14": {
+      "kbli": "14",
+      "deskripsi": "Industri Pakaian Jadi",
+      "besar_sedang": {
+        "min": 0.42,
+        "max": 0.78
+      },
+      "mikro_kecil": {
+        "min": 0.42,
+        "max": 0.78
+      }
+    },
+    "15": {
+      "kbli": "15",
+      "deskripsi": "Industri Kulit, Barang dari Kulit dan Alas Kaki",
+      "besar_sedang": {
+        "min": 0.46,
+        "max": 0.8
+      },
+      "mikro_kecil": {
+        "min": 0.39,
+        "max": 0.73
+      }
+    },
+    "16": {
+      "kbli": "16",
+      "deskripsi": "Industri Kayu, Barang dari Kayu, Anyaman Rotan",
+      "besar_sedang": {
+        "min": 0.33,
+        "max": 0.67
+      },
+      "mikro_kecil": {
+        "min": 0.35,
+        "max": 0.65
+      }
+    },
+    "17": {
+      "kbli": "17",
+      "deskripsi": "Industri Kertas dan Barang dari Kertas",
+      "besar_sedang": {
+        "min": 0.32,
+        "max": 0.61
+      },
+      "mikro_kecil": {
+        "min": 0.37,
+        "max": 0.69
+      }
+    },
+    "18": {
+      "kbli": "18",
+      "deskripsi": "Industri Percetakan dan Reproduksi Media Rekaman",
+      "besar_sedang": {
+        "min": 0.44,
+        "max": 0.7
+      },
+      "mikro_kecil": {
+        "min": 0.4,
+        "max": 0.74
+      }
+    },
+    "19": {
+      "kbli": "19",
+      "deskripsi": "Industri Produk Dari Batu Bara dan Pengilangan Minyak Bumi",
+      "besar_sedang": {
+        "min": 0.28,
+        "max": 0.61
+      },
+      "mikro_kecil": {
+        "min": null,
+        "max": null
+      }
+    },
+    "20": {
+      "kbli": "20",
+      "deskripsi": "Industri Bahan Kimia dan barang dari Bahan Kimia",
+      "besar_sedang": {
+        "min": 0.32,
+        "max": 0.67
+      },
+      "mikro_kecil": {
+        "min": 0.33,
+        "max": 0.62
+      }
+    },
+    "21": {
+      "kbli": "21",
+      "deskripsi": "Industri Farmasi, Obat dan Obat Tradisional",
+      "besar_sedang": {
+        "min": 0.46,
+        "max": 0.69
+      },
+      "mikro_kecil": {
+        "min": 0.39,
+        "max": 0.72
+      }
+    },
+    "22": {
+      "kbli": "22",
+      "deskripsi": "Industri Karet, Barang Dari Karet dan Plastik",
+      "besar_sedang": {
+        "min": 0.32,
+        "max": 0.62
+      },
+      "mikro_kecil": {
+        "min": 0.3,
+        "max": 0.55
+      }
+    },
+    "23": {
+      "kbli": "23",
+      "deskripsi": "Industri Barang Galian Bukan Logam",
+      "besar_sedang": {
+        "min": 0.35,
+        "max": 0.63
+      },
+      "mikro_kecil": {
+        "min": 0.39,
+        "max": 0.73
+      }
+    },
+    "24": {
+      "kbli": "24",
+      "deskripsi": "Industri Logam dasar",
+      "besar_sedang": {
+        "min": 0.33,
+        "max": 0.7
+      },
+      "mikro_kecil": {
+        "min": 0.21,
+        "max": 0.39
+      }
+    },
+    "25": {
+      "kbli": "25",
+      "deskripsi": "Industri Barang Logam bukan Mesin & Peralatannya",
+      "besar_sedang": {
+        "min": 0.37,
+        "max": 0.64
+      },
+      "mikro_kecil": {
+        "min": 0.35,
+        "max": 0.65
+      }
+    },
+    "26": {
+      "kbli": "26",
+      "deskripsi": "Industri Komputer, Barang Elektronika dan Optik",
+      "besar_sedang": {
+        "min": 0.41,
+        "max": 0.8
+      },
+      "mikro_kecil": {
+        "min": 0.35,
+        "max": 0.66
+      }
+    },
+    "27": {
+      "kbli": "27",
+      "deskripsi": "Industri Peralatan Listrik",
+      "besar_sedang": {
+        "min": 0.37,
+        "max": 0.72
+      },
+      "mikro_kecil": {
+        "min": 0.21,
+        "max": 0.38
+      }
+    },
+    "28": {
+      "kbli": "28",
+      "deskripsi": "Industri Mesin dan perlengkapan YTDL",
+      "besar_sedang": {
+        "min": 0.41,
+        "max": 0.75
+      },
+      "mikro_kecil": {
+        "min": 0.35,
+        "max": 0.65
+      }
+    },
+    "29": {
+      "kbli": "29",
+      "deskripsi": "Industri Kendaraan Bermotor",
+      "besar_sedang": {
+        "min": 0.51,
+        "max": 0.67
+      },
+      "mikro_kecil": {
+        "min": 0.35,
+        "max": 0.65
+      }
+    },
+    "30": {
+      "kbli": "30",
+      "deskripsi": "Industri Alat Angkutan Lainnya",
+      "besar_sedang": {
+        "min": 0.51,
+        "max": 0.75
+      },
+      "mikro_kecil": {
+        "min": 0.3,
+        "max": 0.55
+      }
+    },
+    "31": {
+      "kbli": "31",
+      "deskripsi": "Industri Furnitur",
+      "besar_sedang": {
+        "min": 0.4,
+        "max": 0.67
+      },
+      "mikro_kecil": {
+        "min": 0.35,
+        "max": 0.65
+      }
+    },
+    "32": {
+      "kbli": "32",
+      "deskripsi": "Industri Pengolahan Lainnya",
+      "besar_sedang": {
+        "min": 0.47,
+        "max": 0.84
+      },
+      "mikro_kecil": {
+        "min": 0.31,
+        "max": 0.57
+      }
+    },
+    "33": {
+      "kbli": "33",
+      "deskripsi": "Jasa Reparasi dan Pemasangan Mesin dan Peralatan",
+      "besar_sedang": {
+        "min": 0.58,
+        "max": 0.88
+      },
+      "mikro_kecil": {
+        "min": 0.5,
+        "max": 0.93
+      }
+    },
+    "C": {
+      "kbli": "C",
+      "deskripsi": "Nasional (acuan Kategori C kalau KBLI 2 digit tidak punya acuan)",
+      "besar_sedang": {
+        "min": 0.34,
+        "max": 0.67
+      },
+      "mikro_kecil": {
+        "min": 0.34,
+        "max": 0.62
+      }
+    }
+  },
+  "kategori_g_kbli2": {
+    "46": {
+      "kbli_2": "46",
+      "count_sub_kbli": 79,
+      "cogs": {
+        "min": 0.3515,
+        "max": 0.9,
+        "avg": 0.684
+      },
+      "ntb_output": {
+        "min": 0.5536,
+        "max": 0.9398,
+        "avg": 0.8423
+      }
+    },
+    "47": {
+      "kbli_2": "47",
+      "count_sub_kbli": 93,
+      "cogs": {
+        "min": 0.3508,
+        "max": 0.9,
+        "avg": 0.6661
+      },
+      "ntb_output": {
+        "min": 0.5531,
+        "max": 0.94,
+        "avg": 0.8401
+      }
+    }
+  },
+  "kategori_g_kbli3": {
+    "461": {
+      "kbli_3": "461",
+      "count_sub_kbli": 1,
+      "cogs": {
+        "min": 0.4326,
+        "max": 0.8906,
+        "avg": 0.7156
+      },
+      "ntb_output": {
+        "min": 0.6938,
+        "max": 0.9386,
+        "avg": 0.866
+      }
+    },
+    "462": {
+      "kbli_3": "462",
+      "count_sub_kbli": 9,
+      "cogs": {
+        "min": 0.36,
+        "max": 0.9,
+        "avg": 0.7159
+      },
+      "ntb_output": {
+        "min": 0.5636,
+        "max": 0.9398,
+        "avg": 0.8493
+      }
+    },
+    "463": {
+      "kbli_3": "463",
+      "count_sub_kbli": 20,
+      "cogs": {
+        "min": 0.3515,
+        "max": 0.9,
+        "avg": 0.7121
+      },
+      "ntb_output": {
+        "min": 0.5596,
+        "max": 0.9396,
+        "avg": 0.8548
+      }
+    },
+    "464": {
+      "kbli_3": "464",
+      "count_sub_kbli": 13,
+      "cogs": {
+        "min": 0.3534,
+        "max": 0.8969,
+        "avg": 0.6499
+      },
+      "ntb_output": {
+        "min": 0.5929,
+        "max": 0.9368,
+        "avg": 0.8392
+      }
+    },
+    "465": {
+      "kbli_3": "465",
+      "count_sub_kbli": 10,
+      "cogs": {
+        "min": 0.3553,
+        "max": 0.8996,
+        "avg": 0.6555
+      },
+      "ntb_output": {
+        "min": 0.5767,
+        "max": 0.9397,
+        "avg": 0.8441
+      }
+    },
+    "466": {
+      "kbli_3": "466",
+      "count_sub_kbli": 6,
+      "cogs": {
+        "min": 0.3525,
+        "max": 0.8979,
+        "avg": 0.7077
+      },
+      "ntb_output": {
+        "min": 0.6363,
+        "max": 0.9398,
+        "avg": 0.8548
+      }
+    },
+    "467": {
+      "kbli_3": "467",
+      "count_sub_kbli": 20,
+      "cogs": {
+        "min": 0.3529,
+        "max": 0.8984,
+        "avg": 0.6695
+      },
+      "ntb_output": {
+        "min": 0.5536,
+        "max": 0.9396,
+        "avg": 0.823
+      }
+    },
+    "471": {
+      "kbli_3": "471",
+      "count_sub_kbli": 4,
+      "cogs": {
+        "min": 0.375,
+        "max": 0.8946,
+        "avg": 0.6668
+      },
+      "ntb_output": {
+        "min": 0.6914,
+        "max": 0.9385,
+        "avg": 0.88
+      }
+    },
+    "472": {
+      "kbli_3": "472",
+      "count_sub_kbli": 15,
+      "cogs": {
+        "min": 0.3645,
+        "max": 0.9,
+        "avg": 0.7162
+      },
+      "ntb_output": {
+        "min": 0.5558,
+        "max": 0.94,
+        "avg": 0.8473
+      }
+    },
+    "473": {
+      "kbli_3": "473",
+      "count_sub_kbli": 3,
+      "cogs": {
+        "min": 0.3513,
+        "max": 0.8898,
+        "avg": 0.6982
+      },
+      "ntb_output": {
+        "min": 0.7069,
+        "max": 0.9387,
+        "avg": 0.8713
+      }
+    },
+    "474": {
+      "kbli_3": "474",
+      "count_sub_kbli": 6,
+      "cogs": {
+        "min": 0.3508,
+        "max": 0.8991,
+        "avg": 0.6397
+      },
+      "ntb_output": {
+        "min": 0.6454,
+        "max": 0.9366,
+        "avg": 0.8376
+      }
+    },
+    "475": {
+      "kbli_3": "475",
+      "count_sub_kbli": 13,
+      "cogs": {
+        "min": 0.3636,
+        "max": 0.8954,
+        "avg": 0.6409
+      },
+      "ntb_output": {
+        "min": 0.5624,
+        "max": 0.9363,
+        "avg": 0.8451
+      }
+    },
+    "476": {
+      "kbli_3": "476",
+      "count_sub_kbli": 6,
+      "cogs": {
+        "min": 0.3656,
+        "max": 0.8866,
+        "avg": 0.6259
+      },
+      "ntb_output": {
+        "min": 0.5651,
+        "max": 0.9398,
+        "avg": 0.8479
+      }
+    },
+    "477": {
+      "kbli_3": "477",
+      "count_sub_kbli": 40,
+      "cogs": {
+        "min": 0.3514,
+        "max": 0.9,
+        "avg": 0.6586
+      },
+      "ntb_output": {
+        "min": 0.5531,
+        "max": 0.9399,
+        "avg": 0.8241
+      }
+    },
+    "478": {
+      "kbli_3": "478",
+      "count_sub_kbli": 6,
+      "cogs": {
+        "min": 0.3796,
+        "max": 0.8974,
+        "avg": 0.6957
+      },
+      "ntb_output": {
+        "min": 0.5657,
+        "max": 0.9381,
+        "avg": 0.8695
+      }
+    }
+  },
+  "kategori_g_kbli5": {
+    "46100": {
+      "kbli": "46100",
+      "uraian": "Perdagangan Besar atas dasar Balas Jasa (Fee) atau Kontrak",
+      "cogs": {
+        "min": 0.4326,
+        "max": 0.8906,
+        "avg": 0.7156
+      },
+      "ntb_output": {
+        "min": 0.6938,
+        "max": 0.9386,
+        "avg": 0.866
+      }
+    },
+    "46201": {
+      "kbli": "46201",
+      "uraian": "Perdagangan Besar Padi dan Palawija",
+      "cogs": {
+        "min": 0.5422,
+        "max": 0.8914,
+        "avg": 0.7494
+      },
+      "ntb_output": {
+        "min": 0.6435,
+        "max": 0.9301,
+        "avg": 0.8339
+      }
+    },
+    "46202": {
+      "kbli": "46202",
+      "uraian": "Perdagangan Besar Buah yang Mengandung Minyak",
+      "cogs": {
+        "min": 0.4404,
+        "max": 0.8954,
+        "avg": 0.765
+      },
+      "ntb_output": {
+        "min": 0.6952,
+        "max": 0.9338,
+        "avg": 0.8633
+      }
+    },
+    "46203": {
+      "kbli": "46203",
+      "uraian": "Perdagangan Besar Bunga dan Tanaman Hias",
+      "cogs": {
+        "min": 0.5913,
+        "max": 0.8874,
+        "avg": 0.7133
+      },
+      "ntb_output": {
+        "min": 0.7396,
+        "max": 0.9385,
+        "avg": 0.8865
+      }
+    },
+    "46204": {
+      "kbli": "46204",
+      "uraian": "Perdagangan Besar Tembakau Rajangan",
+      "cogs": {
+        "min": 0.4103,
+        "max": 0.8735,
+        "avg": 0.7308
+      },
+      "ntb_output": {
+        "min": 0.7353,
+        "max": 0.8644,
+        "avg": 0.7998
+      }
+    },
+    "46205": {
+      "kbli": "46205",
+      "uraian": "Perdagangan Besar Binatang Hidup",
+      "cogs": {
+        "min": 0.4734,
+        "max": 0.9,
+        "avg": 0.7344
+      },
+      "ntb_output": {
+        "min": 0.7109,
+        "max": 0.9367,
+        "avg": 0.837
+      }
+    },
+    "46206": {
+      "kbli": "46206",
+      "uraian": "Perdagangan Besar Ikan dan Biota Air Hidup Lainnya",
+      "cogs": {
+        "min": 0.452,
+        "max": 0.864,
+        "avg": 0.7379
+      },
+      "ntb_output": {
+        "min": 0.5636,
+        "max": 0.9398,
+        "avg": 0.8512
+      }
+    },
+    "46207": {
+      "kbli": "46207",
+      "uraian": "Perdagangan Besar Hasil Kehutanan dan Perburuan",
+      "cogs": {
+        "min": 0.4486,
+        "max": 0.8673,
+        "avg": 0.7054
+      },
+      "ntb_output": {
+        "min": 0.7136,
+        "max": 0.9371,
+        "avg": 0.8682
+      }
+    },
+    "46208": {
+      "kbli": "46208",
+      "uraian": "Perdagangan Besar Kulit",
+      "cogs": {
+        "min": 0.36,
+        "max": 0.8668,
+        "avg": 0.5755
+      },
+      "ntb_output": {
+        "min": 0.6684,
+        "max": 0.9133,
+        "avg": 0.8312
+      }
+    },
+    "46209": {
+      "kbli": "46209",
+      "uraian": "Perdagangan Besar Hasil Pertanian dan Hewan Hidup Lainnya",
+      "cogs": {
+        "min": 0.4427,
+        "max": 0.8976,
+        "avg": 0.7312
+      },
+      "ntb_output": {
+        "min": 0.704,
+        "max": 0.9365,
+        "avg": 0.8729
+      }
+    },
+    "46311": {
+      "kbli": "46311",
+      "uraian": "Perdagangan Besar Beras",
+      "cogs": {
+        "min": 0.3908,
+        "max": 0.8862,
+        "avg": 0.7166
+      },
+      "ntb_output": {
+        "min": 0.5992,
+        "max": 0.9328,
+        "avg": 0.8612
+      }
+    },
+    "46312": {
+      "kbli": "46312",
+      "uraian": "Perdagangan Besar Buah-buahan",
+      "cogs": {
+        "min": 0.4545,
+        "max": 0.8981,
+        "avg": 0.7229
+      },
+      "ntb_output": {
+        "min": 0.6793,
+        "max": 0.9331,
+        "avg": 0.8358
+      }
+    },
+    "46313": {
+      "kbli": "46313",
+      "uraian": "Perdagangan Besar Sayuran",
+      "cogs": {
+        "min": 0.3686,
+        "max": 0.8993,
+        "avg": 0.7194
+      },
+      "ntb_output": {
+        "min": 0.7794,
+        "max": 0.9321,
+        "avg": 0.8892
+      }
+    },
+    "46314": {
+      "kbli": "46314",
+      "uraian": "Perdagangan Besar Kopi, Teh, dan Kakao",
+      "cogs": {
+        "min": 0.4762,
+        "max": 0.8902,
+        "avg": 0.687
+      },
+      "ntb_output": {
+        "min": 0.7779,
+        "max": 0.9371,
+        "avg": 0.8763
+      }
+    },
+    "46315": {
+      "kbli": "46315",
+      "uraian": "Perdagangan Besar Minyak dan Lemak Nabati",
+      "cogs": {
+        "min": 0.3564,
+        "max": 0.8886,
+        "avg": 0.7099
+      },
+      "ntb_output": {
+        "min": 0.6932,
+        "max": 0.9396,
+        "avg": 0.8518
+      }
+    },
+    "46319": {
+      "kbli": "46319",
+      "uraian": "Perdagangan Besar Bahan Makanan dan Minuman Hasil Pertanian Lainnya",
+      "cogs": {
+        "min": 0.4192,
+        "max": 0.8863,
+        "avg": 0.7606
+      },
+      "ntb_output": {
+        "min": 0.6986,
+        "max": 0.9388,
+        "avg": 0.8601
+      }
+    },
+    "46321": {
+      "kbli": "46321",
+      "uraian": "Perdagangan Besar Daging Sapi dan Daging Sapi Olahan",
+      "cogs": {
+        "min": 0.4079,
+        "max": 0.8866,
+        "avg": 0.6742
+      },
+      "ntb_output": {
+        "min": 0.6025,
+        "max": 0.931,
+        "avg": 0.8418
+      }
+    },
+    "46322": {
+      "kbli": "46322",
+      "uraian": "Perdagangan Besar Daging Ayam dan Daging Ayam Olahan",
+      "cogs": {
+        "min": 0.4188,
+        "max": 0.8914,
+        "avg": 0.7559
+      },
+      "ntb_output": {
+        "min": 0.6128,
+        "max": 0.9392,
+        "avg": 0.8485
+      }
+    },
+    "46323": {
+      "kbli": "46323",
+      "uraian": "Perdagangan Besar Daging dan Daging Olahan Lainnya",
+      "cogs": {
+        "min": 0.3596,
+        "max": 0.8189,
+        "avg": 0.6195
+      },
+      "ntb_output": {
+        "min": 0.8378,
+        "max": 0.9279,
+        "avg": 0.8957
+      }
+    },
+    "46324": {
+      "kbli": "46324",
+      "uraian": "Perdagangan Besar Hasil Perikanan dan Olahan Terkait",
+      "cogs": {
+        "min": 0.4589,
+        "max": 0.8898,
+        "avg": 0.6853
+      },
+      "ntb_output": {
+        "min": 0.6248,
+        "max": 0.936,
+        "avg": 0.8475
+      }
+    },
+    "46325": {
+      "kbli": "46325",
+      "uraian": "Perdagangan Besar Telur dan Hasil Olahan Telur",
+      "cogs": {
+        "min": 0.3515,
+        "max": 0.8925,
+        "avg": 0.7302
+      },
+      "ntb_output": {
+        "min": 0.7644,
+        "max": 0.9311,
+        "avg": 0.8731
+      }
+    },
+    "46326": {
+      "kbli": "46326",
+      "uraian": "Perdagangan Besar Susu dan Produk Susu",
+      "cogs": {
+        "min": 0.4576,
+        "max": 0.8997,
+        "avg": 0.7487
+      },
+      "ntb_output": {
+        "min": 0.5596,
+        "max": 0.9131,
+        "avg": 0.7994
+      }
+    },
+    "46327": {
+      "kbli": "46327",
+      "uraian": "Perdagangan Besar Minyak dan Lemak HewaniNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.6745,
+        "max": 0.8293,
+        "avg": 0.7773
+      },
+      "ntb_output": {
+        "min": 0.9188,
+        "max": 0.9188,
+        "avg": 0.9188
+      }
+    },
+    "46329": {
+      "kbli": "46329",
+      "uraian": "Perdagangan Besar Bahan Makanan dan Minuman Hasil Peternakan dan Perikanan Lainnya",
+      "cogs": {
+        "min": 0.6,
+        "max": 0.9,
+        "avg": 0.7328
+      },
+      "ntb_output": {
+        "min": 0.5711,
+        "max": 0.8333,
+        "avg": 0.7061
+      }
+    },
+    "46331": {
+      "kbli": "46331",
+      "uraian": "Perdagangan Besar Gula, Cokelat, dan Kembang Gula",
+      "cogs": {
+        "min": 0.4208,
+        "max": 0.898,
+        "avg": 0.7089
+      },
+      "ntb_output": {
+        "min": 0.7188,
+        "max": 0.905,
+        "avg": 0.8476
+      }
+    },
+    "46332": {
+      "kbli": "46332",
+      "uraian": "Perdagangan Besar Produk Bakeri",
+      "cogs": {
+        "min": 0.36,
+        "max": 0.8934,
+        "avg": 0.6659
+      },
+      "ntb_output": {
+        "min": 0.6904,
+        "max": 0.9319,
+        "avg": 0.8344
+      }
+    },
+    "46333": {
+      "kbli": "46333",
+      "uraian": "Perdagangan Besar Minuman Beralkohol",
+      "cogs": {
+        "min": 0.3707,
+        "max": 0.856,
+        "avg": 0.6534
+      },
+      "ntb_output": {
+        "min": 0.863,
+        "max": 0.9281,
+        "avg": 0.8956
+      }
+    },
+    "46334": {
+      "kbli": "46334",
+      "uraian": "Perdagangan Besar Minuman Nonalkohol Bukan Susu",
+      "cogs": {
+        "min": 0.4091,
+        "max": 0.893,
+        "avg": 0.6631
+      },
+      "ntb_output": {
+        "min": 0.7308,
+        "max": 0.9268,
+        "avg": 0.8512
+      }
+    },
+    "46335": {
+      "kbli": "46335",
+      "uraian": "Perdagangan Besar Rokok dan Tembakau",
+      "cogs": {
+        "min": 0.5,
+        "max": 0.8993,
+        "avg": 0.7819
+      },
+      "ntb_output": {
+        "min": 0.6125,
+        "max": 0.939,
+        "avg": 0.8674
+      }
+    },
+    "46339": {
+      "kbli": "46339",
+      "uraian": "Perdagangan Besar Makanan dan Minuman Lainnya",
+      "cogs": {
+        "min": 0.468,
+        "max": 0.8988,
+        "avg": 0.7287
+      },
+      "ntb_output": {
+        "min": 0.8166,
+        "max": 0.9395,
+        "avg": 0.8948
+      }
+    },
+    "46411": {
+      "kbli": "46411",
+      "uraian": "Perdagangan Besar Tekstil",
+      "cogs": {
+        "min": 0.4005,
+        "max": 0.8917,
+        "avg": 0.6088
+      },
+      "ntb_output": {
+        "min": 0.7964,
+        "max": 0.9308,
+        "avg": 0.8627
+      }
+    },
+    "46412": {
+      "kbli": "46412",
+      "uraian": "Perdagangan Besar Pakaian",
+      "cogs": {
+        "min": 0.3668,
+        "max": 0.8747,
+        "avg": 0.6315
+      },
+      "ntb_output": {
+        "min": 0.6524,
+        "max": 0.9151,
+        "avg": 0.8601
+      }
+    },
+    "46413": {
+      "kbli": "46413",
+      "uraian": "Perdagangan Besar Alas Kaki",
+      "cogs": {
+        "min": 0.4272,
+        "max": 0.8346,
+        "avg": 0.6548
+      },
+      "ntb_output": {
+        "min": 0.6805,
+        "max": 0.9288,
+        "avg": 0.8387
+      }
+    },
+    "46414": {
+      "kbli": "46414",
+      "uraian": "Perdagangan Besar Barang Jadi Tekstil",
+      "cogs": {
+        "min": 0.4285,
+        "max": 0.8671,
+        "avg": 0.6311
+      },
+      "ntb_output": {
+        "min": 0.5929,
+        "max": 0.9307,
+        "avg": 0.833
+      }
+    },
+    "46430": {
+      "kbli": "46430",
+      "uraian": "Perdagangan Besar Alat Fotografi dan Barang Optik",
+      "cogs": {
+        "min": 0.4292,
+        "max": 0.8331,
+        "avg": 0.6231
+      },
+      "ntb_output": {
+        "min": 0.5999,
+        "max": 0.8772,
+        "avg": 0.7506
+      }
+    },
+    "46441": {
+      "kbli": "46441",
+      "uraian": "Perdagangan Besar Sediaan Farmasi untuk Manusia",
+      "cogs": {
+        "min": 0.3815,
+        "max": 0.8892,
+        "avg": 0.6564
+      },
+      "ntb_output": {
+        "min": 0.6818,
+        "max": 0.9362,
+        "avg": 0.8567
+      }
+    },
+    "46442": {
+      "kbli": "46442",
+      "uraian": "Perdagangan Besar Sediaan Farmasi untuk Hewan",
+      "cogs": {
+        "min": 0.4092,
+        "max": 0.8966,
+        "avg": 0.6777
+      },
+      "ntb_output": {
+        "min": 0.7,
+        "max": 0.8222,
+        "avg": 0.7761
+      }
+    },
+    "46451": {
+      "kbli": "46451",
+      "uraian": "Perdagangan Besar Alat Tulis dan Gambar",
+      "cogs": {
+        "min": 0.3704,
+        "max": 0.8955,
+        "avg": 0.673
+      },
+      "ntb_output": {
+        "min": 0.597,
+        "max": 0.9333,
+        "avg": 0.8478
+      }
+    },
+    "46452": {
+      "kbli": "46452",
+      "uraian": "Perdagangan Besar Barang Percetakan dan Penerbitan dalam Berbagai Bentuk",
+      "cogs": {
+        "min": 0.4127,
+        "max": 0.8969,
+        "avg": 0.669
+      },
+      "ntb_output": {
+        "min": 0.7652,
+        "max": 0.9335,
+        "avg": 0.8779
+      }
+    },
+    "46492": {
+      "kbli": "46492",
+      "uraian": "Perdagangan Besar Peralatan dan Perlengkapan OlahragaNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.4645,
+        "max": 0.8421,
+        "avg": 0.667
+      },
+      "ntb_output": {
+        "min": 0.7914,
+        "max": 0.7914,
+        "avg": 0.7914
+      }
+    },
+    "46493": {
+      "kbli": "46493",
+      "uraian": "Perdagangan Besar Alat MusikNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.3948,
+        "max": 0.8593,
+        "avg": 0.579
+      },
+      "ntb_output": {
+        "min": 0.9368,
+        "max": 0.9368,
+        "avg": 0.9368
+      }
+    },
+    "46494": {
+      "kbli": "46494",
+      "uraian": "Perdagangan Besar Perhiasan dan Jam",
+      "cogs": {
+        "min": 0.3534,
+        "max": 0.8786,
+        "avg": 0.6542
+      },
+      "ntb_output": {
+        "min": 0.7339,
+        "max": 0.9177,
+        "avg": 0.8259
+      }
+    },
+    "46495": {
+      "kbli": "46495",
+      "uraian": "Perdagangan Besar Alat Permainan dan Mainan",
+      "cogs": {
+        "min": 0.5208,
+        "max": 0.892,
+        "avg": 0.7233
+      },
+      "ntb_output": {
+        "min": 0.7216,
+        "max": 0.9142,
+        "avg": 0.8516
+      }
+    },
+    "46511": {
+      "kbli": "46511",
+      "uraian": "Perdagangan Besar Komputer dan Perlengkapan Komputer",
+      "cogs": {
+        "min": 0.4165,
+        "max": 0.8898,
+        "avg": 0.6648
+      },
+      "ntb_output": {
+        "min": 0.5767,
+        "max": 0.9364,
+        "avg": 0.8016
+      }
+    },
+    "46521": {
+      "kbli": "46521",
+      "uraian": "Perdagangan Besar Suku Cadang Elektronik",
+      "cogs": {
+        "min": 0.4458,
+        "max": 0.8862,
+        "avg": 0.7363
+      },
+      "ntb_output": {
+        "min": 0.592,
+        "max": 0.925,
+        "avg": 0.7844
+      }
+    },
+    "46522": {
+      "kbli": "46522",
+      "uraian": "Perdagangan Besar Disket, Flash Drive, Pita Audio dan Video, serta CD dan DVD KosongNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.5732,
+        "max": 0.7663,
+        "avg": 0.7003
+      },
+      "ntb_output": {
+        "min": 0.8777,
+        "max": 0.8777,
+        "avg": 0.8777
+      }
+    },
+    "46523": {
+      "kbli": "46523",
+      "uraian": "Perdagangan Besar Peralatan Telekomunikasi",
+      "cogs": {
+        "min": 0.3887,
+        "max": 0.8927,
+        "avg": 0.6467
+      },
+      "ntb_output": {
+        "min": 0.6216,
+        "max": 0.9397,
+        "avg": 0.8325
+      }
+    },
+    "46530": {
+      "kbli": "46530",
+      "uraian": "Perdagangan Besar Mesin, Peralatan Dan Perlengkapan Pertanian",
+      "cogs": {
+        "min": 0.3992,
+        "max": 0.886,
+        "avg": 0.6614
+      },
+      "ntb_output": {
+        "min": 0.5879,
+        "max": 0.925,
+        "avg": 0.8196
+      }
+    },
+    "46591": {
+      "kbli": "46591",
+      "uraian": "Perdagangan Besar Mesin Kantor dan Industri Pengolahan, Suku Cadang, dan Perlengkapannya",
+      "cogs": {
+        "min": 0.3875,
+        "max": 0.8449,
+        "avg": 0.6409
+      },
+      "ntb_output": {
+        "min": 0.7377,
+        "max": 0.9333,
+        "avg": 0.8496
+      }
+    },
+    "46592": {
+      "kbli": "46592",
+      "uraian": "Perdagangan Besar Alat Transportasi Laut, Suku Cadang, dan Perlengkapannya",
+      "cogs": {
+        "min": 0.4071,
+        "max": 0.85,
+        "avg": 0.5979
+      },
+      "ntb_output": {
+        "min": 0.8065,
+        "max": 0.9364,
+        "avg": 0.8789
+      }
+    },
+    "46593": {
+      "kbli": "46593",
+      "uraian": "Perdagangan Besar Alat Transportasi Darat (Bukan Mobil, Sepeda Motor, dan Sejenisnya), Suku Cadang, dan Perlengkapannya",
+      "cogs": {
+        "min": 0.3553,
+        "max": 0.876,
+        "avg": 0.6301
+      },
+      "ntb_output": {
+        "min": 0.6354,
+        "max": 0.9351,
+        "avg": 0.8609
+      }
+    },
+    "46594": {
+      "kbli": "46594",
+      "uraian": "Perdagangan Besar Alat Transportasi Udara, Suku Cadang dan PerlengkapannyaNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.3851,
+        "max": 0.8226,
+        "avg": 0.6166
+      },
+      "ntb_output": {
+        "min": 0.874,
+        "max": 0.874,
+        "avg": 0.874
+      }
+    },
+    "46599": {
+      "kbli": "46599",
+      "uraian": "Perdagangan Besar Mesin, Peralatan, dan Perlengkapan Lainnya YTDL",
+      "cogs": {
+        "min": 0.4047,
+        "max": 0.8996,
+        "avg": 0.6598
+      },
+      "ntb_output": {
+        "min": 0.7413,
+        "max": 0.9246,
+        "avg": 0.8621
+      }
+    },
+    "46611": {
+      "kbli": "46611",
+      "uraian": "Perdagangan Besar Mobil Baru",
+      "cogs": {
+        "min": 0.3525,
+        "max": 0.8817,
+        "avg": 0.699
+      },
+      "ntb_output": {
+        "min": 0.6923,
+        "max": 0.9325,
+        "avg": 0.8445
+      }
+    },
+    "46612": {
+      "kbli": "46612",
+      "uraian": "Perdagangan Besar Mobil Bekas",
+      "cogs": {
+        "min": 0.4037,
+        "max": 0.8933,
+        "avg": 0.6843
+      },
+      "ntb_output": {
+        "min": 0.7144,
+        "max": 0.9333,
+        "avg": 0.8503
+      }
+    },
+    "46620": {
+      "kbli": "46620",
+      "uraian": "Perdagangan Besar Suku Cadang dan Aksesori Mobil",
+      "cogs": {
+        "min": 0.4626,
+        "max": 0.8979,
+        "avg": 0.7065
+      },
+      "ntb_output": {
+        "min": 0.7516,
+        "max": 0.9302,
+        "avg": 0.8634
+      }
+    },
+    "46631": {
+      "kbli": "46631",
+      "uraian": "Perdagangan Besar Sepeda Motor Baru",
+      "cogs": {
+        "min": 0.3769,
+        "max": 0.8927,
+        "avg": 0.7153
+      },
+      "ntb_output": {
+        "min": 0.749,
+        "max": 0.9363,
+        "avg": 0.8835
+      }
+    },
+    "46632": {
+      "kbli": "46632",
+      "uraian": "Perdagangan Besar Sepeda Motor Bekas",
+      "cogs": {
+        "min": 0.4404,
+        "max": 0.897,
+        "avg": 0.79
+      },
+      "ntb_output": {
+        "min": 0.6363,
+        "max": 0.9219,
+        "avg": 0.8113
+      }
+    },
+    "46633": {
+      "kbli": "46633",
+      "uraian": "Perdagangan Besar Suku Cadang Sepeda Motor dan Aksesorinya",
+      "cogs": {
+        "min": 0.3839,
+        "max": 0.8861,
+        "avg": 0.6509
+      },
+      "ntb_output": {
+        "min": 0.6881,
+        "max": 0.9398,
+        "avg": 0.8757
+      }
+    },
+    "46710": {
+      "kbli": "46710",
+      "uraian": "Perdagangan Besar Bahan Bakar Padat, Cair, dan Gas beserta Produk Terkait",
+      "cogs": {
+        "min": 0.375,
+        "max": 0.8892,
+        "avg": 0.7508
+      },
+      "ntb_output": {
+        "min": 0.6645,
+        "max": 0.9346,
+        "avg": 0.8411
+      }
+    },
+    "46732": {
+      "kbli": "46732",
+      "uraian": "Perdagangan Besar Kaca Lembaran",
+      "cogs": {
+        "min": 0.3667,
+        "max": 0.8775,
+        "avg": 0.5935
+      },
+      "ntb_output": {
+        "min": 0.7408,
+        "max": 0.9361,
+        "avg": 0.8678
+      }
+    },
+    "46733": {
+      "kbli": "46733",
+      "uraian": "Perdagangan Besar Bahan Konstruksi dari Tanah Liat, Kapur, Semen, atau Kaca",
+      "cogs": {
+        "min": 0.4323,
+        "max": 0.8637,
+        "avg": 0.7118
+      },
+      "ntb_output": {
+        "min": 0.6201,
+        "max": 0.9148,
+        "avg": 0.8244
+      }
+    },
+    "46734": {
+      "kbli": "46734",
+      "uraian": "Perdagangan Besar Semen, Kapur, Pasir, dan Batu",
+      "cogs": {
+        "min": 0.3636,
+        "max": 0.8976,
+        "avg": 0.7344
+      },
+      "ntb_output": {
+        "min": 0.5934,
+        "max": 0.9299,
+        "avg": 0.8187
+      }
+    },
+    "46735": {
+      "kbli": "46735",
+      "uraian": "Perdagangan Besar Bahan Konstruksi dari Porselen",
+      "cogs": {
+        "min": 0.4302,
+        "max": 0.8644,
+        "avg": 0.6877
+      },
+      "ntb_output": {
+        "min": 0.5536,
+        "max": 0.9375,
+        "avg": 0.8315
+      }
+    },
+    "46736": {
+      "kbli": "46736",
+      "uraian": "Perdagangan Besar Bahan Konstruksi dari Kayu",
+      "cogs": {
+        "min": 0.4286,
+        "max": 0.8854,
+        "avg": 0.7025
+      },
+      "ntb_output": {
+        "min": 0.568,
+        "max": 0.9305,
+        "avg": 0.8264
+      }
+    },
+    "46737": {
+      "kbli": "46737",
+      "uraian": "Perdagangan Besar Cat",
+      "cogs": {
+        "min": 0.4208,
+        "max": 0.8702,
+        "avg": 0.7145
+      },
+      "ntb_output": {
+        "min": 0.6757,
+        "max": 0.9368,
+        "avg": 0.8555
+      }
+    },
+    "46738": {
+      "kbli": "46738",
+      "uraian": "Perdagangan Besar Berbagai Macam Material Bangunan",
+      "cogs": {
+        "min": 0.3594,
+        "max": 0.8782,
+        "avg": 0.6485
+      },
+      "ntb_output": {
+        "min": 0.7409,
+        "max": 0.9324,
+        "avg": 0.8526
+      }
+    },
+    "46739": {
+      "kbli": "46739",
+      "uraian": "Perdagangan Besar Bahan Konstruksi, Perkakas, Perlengkapan Perpipaan, dan Peralatan Pemanas Lainnya",
+      "cogs": {
+        "min": 0.4611,
+        "max": 0.8243,
+        "avg": 0.6508
+      },
+      "ntb_output": {
+        "min": 0.718,
+        "max": 0.9277,
+        "avg": 0.8567
+      }
+    },
+    "46741": {
+      "kbli": "46741",
+      "uraian": "Perdagangan Besar Mineral Bukan LogamNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.5117,
+        "max": 0.8043,
+        "avg": 0.6113
+      },
+      "ntb_output": {
+        "min": 0.7534,
+        "max": 0.7534,
+        "avg": 0.7534
+      }
+    },
+    "46743": {
+      "kbli": "46743",
+      "uraian": "Perdagangan Besar Zat Radioaktif dan Pembangkit Radiasi PengionCOGS rentang nol - tidak dipakaiNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.5981,
+        "max": 0.5981,
+        "avg": 0.5981
+      },
+      "ntb_output": {
+        "min": 0.5812,
+        "max": 0.5812,
+        "avg": 0.5812
+      }
+    },
+    "46751": {
+      "kbli": "46751",
+      "uraian": "Perdagangan Besar Bahan dan Barang Kimia",
+      "cogs": {
+        "min": 0.3981,
+        "max": 0.8127,
+        "avg": 0.6232
+      },
+      "ntb_output": {
+        "min": 0.5761,
+        "max": 0.9158,
+        "avg": 0.799
+      }
+    },
+    "46752": {
+      "kbli": "46752",
+      "uraian": "Perdagangan Besar Pupuk dan Produk Agrokimia",
+      "cogs": {
+        "min": 0.4257,
+        "max": 0.8945,
+        "avg": 0.743
+      },
+      "ntb_output": {
+        "min": 0.6259,
+        "max": 0.9188,
+        "avg": 0.8428
+      }
+    },
+    "46753": {
+      "kbli": "46753",
+      "uraian": "Perdagangan Besar Bahan Berbahaya (B2)COGS rentang nol - tidak dipakaiNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.5143,
+        "max": 0.5143,
+        "avg": 0.5143
+      },
+      "ntb_output": {
+        "min": 0.8235,
+        "max": 0.8235,
+        "avg": 0.8235
+      }
+    },
+    "46791": {
+      "kbli": "46791",
+      "uraian": "Perdagangan Besar Alat Kesehatan dan Laboratorium untuk Manusia",
+      "cogs": {
+        "min": 0.4191,
+        "max": 0.878,
+        "avg": 0.6651
+      },
+      "ntb_output": {
+        "min": 0.7447,
+        "max": 0.9396,
+        "avg": 0.8599
+      }
+    },
+    "46793": {
+      "kbli": "46793",
+      "uraian": "Perdagangan Besar Karet dan Plastik dalam Bentuk Dasar",
+      "cogs": {
+        "min": 0.3529,
+        "max": 0.8984,
+        "avg": 0.6597
+      },
+      "ntb_output": {
+        "min": 0.7773,
+        "max": 0.9315,
+        "avg": 0.8741
+      }
+    },
+    "46794": {
+      "kbli": "46794",
+      "uraian": "Perdagangan Besar Kertas dan Karton",
+      "cogs": {
+        "min": 0.4004,
+        "max": 0.8809,
+        "avg": 0.6907
+      },
+      "ntb_output": {
+        "min": 0.5853,
+        "max": 0.9055,
+        "avg": 0.7523
+      }
+    },
+    "46795": {
+      "kbli": "46795",
+      "uraian": "Perdagangan Besar Barang dari Kertas dan Karton",
+      "cogs": {
+        "min": 0.6179,
+        "max": 0.8809,
+        "avg": 0.8013
+      },
+      "ntb_output": {
+        "min": 0.8161,
+        "max": 0.9042,
+        "avg": 0.8661
+      }
+    },
+    "46796": {
+      "kbli": "46796",
+      "uraian": "Perdagangan Besar Barang Bekas dan Skrap",
+      "cogs": {
+        "min": 0.3685,
+        "max": 0.8464,
+        "avg": 0.6264
+      },
+      "ntb_output": {
+        "min": 0.722,
+        "max": 0.9364,
+        "avg": 0.8681
+      }
+    },
+    "46799": {
+      "kbli": "46799",
+      "uraian": "Perdagangan Besar Produk Lainnya YTDL",
+      "cogs": {
+        "min": 0.4333,
+        "max": 0.8696,
+        "avg": 0.6615
+      },
+      "ntb_output": {
+        "min": 0.676,
+        "max": 0.9283,
+        "avg": 0.864
+      }
+    },
+    "47111": {
+      "kbli": "47111",
+      "uraian": "Perdagangan Eceran Berbagai Macam Barang yang Utamanya Makanan, Minuman, atau Tembakau dengan Sistem Swalayan",
+      "cogs": {
+        "min": 0.3963,
+        "max": 0.8611,
+        "avg": 0.6477
+      },
+      "ntb_output": {
+        "min": 0.8189,
+        "max": 0.9359,
+        "avg": 0.8741
+      }
+    },
+    "47112": {
+      "kbli": "47112",
+      "uraian": "Perdagangan Eceran Berbagai Macam Barang yang Utamanya Makanan, Minuman, atau Tembakau Selain dengan Sistem Swalayan",
+      "cogs": {
+        "min": 0.375,
+        "max": 0.8885,
+        "avg": 0.6783
+      },
+      "ntb_output": {
+        "min": 0.8032,
+        "max": 0.9385,
+        "avg": 0.8993
+      }
+    },
+    "47191": {
+      "kbli": "47191",
+      "uraian": "Perdagangan Eceran Berbagai Macam Barang yang Utamanya Bukan Makanan, Minuman, atau Tembakau dengan Sistem Swalayan",
+      "cogs": {
+        "min": 0.3777,
+        "max": 0.8912,
+        "avg": 0.6327
+      },
+      "ntb_output": {
+        "min": 0.6914,
+        "max": 0.9384,
+        "avg": 0.8553
+      }
+    },
+    "47192": {
+      "kbli": "47192",
+      "uraian": "Perdagangan Eceran Berbagai Macam Barang yang Utamanya Bukan Makanan, Minuman, atau Tembakau Selain dengan Sistem Swalayan",
+      "cogs": {
+        "min": 0.4276,
+        "max": 0.8946,
+        "avg": 0.7084
+      },
+      "ntb_output": {
+        "min": 0.8182,
+        "max": 0.9369,
+        "avg": 0.8915
+      }
+    },
+    "47211": {
+      "kbli": "47211",
+      "uraian": "Perdagangan Eceran Padi dan Palawija",
+      "cogs": {
+        "min": 0.5127,
+        "max": 0.8643,
+        "avg": 0.7048
+      },
+      "ntb_output": {
+        "min": 0.7593,
+        "max": 0.9054,
+        "avg": 0.8569
+      }
+    },
+    "47212": {
+      "kbli": "47212",
+      "uraian": "Perdagangan Eceran Buah-buahan",
+      "cogs": {
+        "min": 0.3964,
+        "max": 0.8657,
+        "avg": 0.6805
+      },
+      "ntb_output": {
+        "min": 0.6882,
+        "max": 0.928,
+        "avg": 0.8471
+      }
+    },
+    "47213": {
+      "kbli": "47213",
+      "uraian": "Perdagangan Eceran Sayuran",
+      "cogs": {
+        "min": 0.4073,
+        "max": 0.8954,
+        "avg": 0.7247
+      },
+      "ntb_output": {
+        "min": 0.6271,
+        "max": 0.9362,
+        "avg": 0.841
+      }
+    },
+    "47214": {
+      "kbli": "47214",
+      "uraian": "Perdagangan Eceran Hasil Peternakan",
+      "cogs": {
+        "min": 0.4925,
+        "max": 0.8908,
+        "avg": 0.7748
+      },
+      "ntb_output": {
+        "min": 0.7206,
+        "max": 0.9378,
+        "avg": 0.8744
+      }
+    },
+    "47215": {
+      "kbli": "47215",
+      "uraian": "Perdagangan Eceran Hasil Perikanan",
+      "cogs": {
+        "min": 0.4864,
+        "max": 0.8764,
+        "avg": 0.7446
+      },
+      "ntb_output": {
+        "min": 0.6619,
+        "max": 0.9262,
+        "avg": 0.8473
+      }
+    },
+    "47216": {
+      "kbli": "47216",
+      "uraian": "Perdagangan Eceran Hasil Kehutanan dan Perburuan",
+      "cogs": {
+        "min": 0.5392,
+        "max": 0.8595,
+        "avg": 0.7341
+      },
+      "ntb_output": {
+        "min": 0.8631,
+        "max": 0.9012,
+        "avg": 0.8822
+      }
+    },
+    "47219": {
+      "kbli": "47219",
+      "uraian": "Perdagangan Eceran Hasil Pertanian Lainnya",
+      "cogs": {
+        "min": 0.4479,
+        "max": 0.8937,
+        "avg": 0.7431
+      },
+      "ntb_output": {
+        "min": 0.7751,
+        "max": 0.9369,
+        "avg": 0.8789
+      }
+    },
+    "47221": {
+      "kbli": "47221",
+      "uraian": "Perdagangan Eceran Minuman Beralkohol",
+      "cogs": {
+        "min": 0.6429,
+        "max": 0.8984,
+        "avg": 0.7899
+      },
+      "ntb_output": {
+        "min": 0.91,
+        "max": 0.9351,
+        "avg": 0.9226
+      }
+    },
+    "47222": {
+      "kbli": "47222",
+      "uraian": "Perdagangan Eceran Minuman Tidak Beralkohol",
+      "cogs": {
+        "min": 0.4,
+        "max": 0.9,
+        "avg": 0.6532
+      },
+      "ntb_output": {
+        "min": 0.5639,
+        "max": 0.94,
+        "avg": 0.8384
+      }
+    },
+    "47230": {
+      "kbli": "47230",
+      "uraian": "Perdagangan Eceran Rokok dan Tembakau",
+      "cogs": {
+        "min": 0.4954,
+        "max": 0.8567,
+        "avg": 0.7282
+      },
+      "ntb_output": {
+        "min": 0.5558,
+        "max": 0.9352,
+        "avg": 0.8077
+      }
+    },
+    "47241": {
+      "kbli": "47241",
+      "uraian": "Perdagangan Eceran Beras",
+      "cogs": {
+        "min": 0.3977,
+        "max": 0.8948,
+        "avg": 0.7107
+      },
+      "ntb_output": {
+        "min": 0.7043,
+        "max": 0.9366,
+        "avg": 0.857
+      }
+    },
+    "47242": {
+      "kbli": "47242",
+      "uraian": "Perdagangan Eceran Roti, Kue Kering, serta Kue Basah dan Sejenisnya",
+      "cogs": {
+        "min": 0.3645,
+        "max": 0.8751,
+        "avg": 0.6351
+      },
+      "ntb_output": {
+        "min": 0.6666,
+        "max": 0.9044,
+        "avg": 0.8305
+      }
+    },
+    "47243": {
+      "kbli": "47243",
+      "uraian": "Perdagangan Eceran Kopi, Gula Pasir, Gula Merah, dan Sejenisnya",
+      "cogs": {
+        "min": 0.3941,
+        "max": 0.8328,
+        "avg": 0.6591
+      },
+      "ntb_output": {
+        "min": 0.6488,
+        "max": 0.931,
+        "avg": 0.8557
+      }
+    },
+    "47244": {
+      "kbli": "47244",
+      "uraian": "Perdagangan Eceran Tahu, Tempe, Tauco, dan Oncom",
+      "cogs": {
+        "min": 0.5843,
+        "max": 0.8864,
+        "avg": 0.7497
+      },
+      "ntb_output": {
+        "min": 0.5842,
+        "max": 0.8286,
+        "avg": 0.7064
+      }
+    },
+    "47249": {
+      "kbli": "47249",
+      "uraian": "Perdagangan Eceran Makanan Lainnya",
+      "cogs": {
+        "min": 0.4816,
+        "max": 0.8857,
+        "avg": 0.711
+      },
+      "ntb_output": {
+        "min": 0.6974,
+        "max": 0.9321,
+        "avg": 0.864
+      }
+    },
+    "47301": {
+      "kbli": "47301",
+      "uraian": "Perdagangan Eceran Bahan Bakar di Sarana Pengisian Bahan Bakar",
+      "cogs": {
+        "min": 0.4203,
+        "max": 0.887,
+        "avg": 0.7723
+      },
+      "ntb_output": {
+        "min": 0.7995,
+        "max": 0.9387,
+        "avg": 0.9054
+      }
+    },
+    "47302": {
+      "kbli": "47302",
+      "uraian": "Perdagangan Eceran Bahan Bakar Selain di Sarana Pengisian Bahan Bakar",
+      "cogs": {
+        "min": 0.3513,
+        "max": 0.8898,
+        "avg": 0.7
+      },
+      "ntb_output": {
+        "min": 0.7742,
+        "max": 0.9373,
+        "avg": 0.8764
+      }
+    },
+    "47303": {
+      "kbli": "47303",
+      "uraian": "Perdagangan Eceran Minyak Pelumas",
+      "cogs": {
+        "min": 0.4195,
+        "max": 0.8781,
+        "avg": 0.6223
+      },
+      "ntb_output": {
+        "min": 0.7069,
+        "max": 0.9297,
+        "avg": 0.8321
+      }
+    },
+    "47401": {
+      "kbli": "47401",
+      "uraian": "Perdagangan Eceran Komputer dan Perlengkapannya",
+      "cogs": {
+        "min": 0.3508,
+        "max": 0.8991,
+        "avg": 0.6781
+      },
+      "ntb_output": {
+        "min": 0.6454,
+        "max": 0.9366,
+        "avg": 0.8503
+      }
+    },
+    "47402": {
+      "kbli": "47402",
+      "uraian": "Perdagangan Eceran Peralatan dan Produk Gim Video serta Sejenisnya",
+      "cogs": {
+        "min": 0.53,
+        "max": 0.8724,
+        "avg": 0.7009
+      },
+      "ntb_output": {
+        "min": 0.7013,
+        "max": 0.88,
+        "avg": 0.7962
+      }
+    },
+    "47403": {
+      "kbli": "47403",
+      "uraian": "Perdagangan Eceran Perangkat Lunak (Software)",
+      "cogs": {
+        "min": 0.4314,
+        "max": 0.7818,
+        "avg": 0.5874
+      },
+      "ntb_output": {
+        "min": 0.7914,
+        "max": 0.9311,
+        "avg": 0.8555
+      }
+    },
+    "47404": {
+      "kbli": "47404",
+      "uraian": "Perdagangan Eceran Telepon beserta Aksesorisnya",
+      "cogs": {
+        "min": 0.3935,
+        "max": 0.8186,
+        "avg": 0.6387
+      },
+      "ntb_output": {
+        "min": 0.7327,
+        "max": 0.9352,
+        "avg": 0.8824
+      }
+    },
+    "47405": {
+      "kbli": "47405",
+      "uraian": "Perdagangan Eceran Mesin dan Peralatan Kantor",
+      "cogs": {
+        "min": 0.3973,
+        "max": 0.7847,
+        "avg": 0.5946
+      },
+      "ntb_output": {
+        "min": 0.823,
+        "max": 0.824,
+        "avg": 0.8235
+      }
+    },
+    "47406": {
+      "kbli": "47406",
+      "uraian": "Perdagangan Eceran Peralatan Audio dan Video",
+      "cogs": {
+        "min": 0.3729,
+        "max": 0.8393,
+        "avg": 0.6386
+      },
+      "ntb_output": {
+        "min": 0.7071,
+        "max": 0.9344,
+        "avg": 0.8176
+      }
+    },
+    "47511": {
+      "kbli": "47511",
+      "uraian": "Perdagangan Eceran Tekstil",
+      "cogs": {
+        "min": 0.409,
+        "max": 0.8209,
+        "avg": 0.6303
+      },
+      "ntb_output": {
+        "min": 0.7757,
+        "max": 0.9334,
+        "avg": 0.8908
+      }
+    },
+    "47512": {
+      "kbli": "47512",
+      "uraian": "Perdagangan Eceran Perlengkapan Rumah Tangga dari Tekstil",
+      "cogs": {
+        "min": 0.3636,
+        "max": 0.7937,
+        "avg": 0.5765
+      },
+      "ntb_output": {
+        "min": 0.7143,
+        "max": 0.8519,
+        "avg": 0.7894
+      }
+    },
+    "47513": {
+      "kbli": "47513",
+      "uraian": "Perdagangan Eceran Perlengkapan Jahit Menjahit",
+      "cogs": {
+        "min": 0.377,
+        "max": 0.8954,
+        "avg": 0.6407
+      },
+      "ntb_output": {
+        "min": 0.8523,
+        "max": 0.9267,
+        "avg": 0.8874
+      }
+    },
+    "47521": {
+      "kbli": "47521",
+      "uraian": "Perdagangan Eceran Bahan dan Material Konstruksi",
+      "cogs": {
+        "min": 0.3986,
+        "max": 0.8917,
+        "avg": 0.6925
+      },
+      "ntb_output": {
+        "min": 0.6574,
+        "max": 0.9359,
+        "avg": 0.8556
+      }
+    },
+    "47522": {
+      "kbli": "47522",
+      "uraian": "Perdagangan Eceran Kaca Lembaran",
+      "cogs": {
+        "min": 0.6635,
+        "max": 0.8658,
+        "avg": 0.7625
+      },
+      "ntb_output": {
+        "min": 0.6225,
+        "max": 0.86,
+        "avg": 0.7412
+      }
+    },
+    "47523": {
+      "kbli": "47523",
+      "uraian": "Perdagangan Eceran Perkakas dan Peralatan Pertukangan",
+      "cogs": {
+        "min": 0.4708,
+        "max": 0.8675,
+        "avg": 0.6936
+      },
+      "ntb_output": {
+        "min": 0.6167,
+        "max": 0.9314,
+        "avg": 0.8107
+      }
+    },
+    "47525": {
+      "kbli": "47525",
+      "uraian": "Perdagangan Eceran Cat, Pernis dan Lakeri",
+      "cogs": {
+        "min": 0.373,
+        "max": 0.8648,
+        "avg": 0.6221
+      },
+      "ntb_output": {
+        "min": 0.7773,
+        "max": 0.9362,
+        "avg": 0.8923
+      }
+    },
+    "47530": {
+      "kbli": "47530",
+      "uraian": "Perdagangan Eceran Karpet, Permadani, serta Penutup Dinding dan Lantai",
+      "cogs": {
+        "min": 0.3859,
+        "max": 0.8177,
+        "avg": 0.5956
+      },
+      "ntb_output": {
+        "min": 0.7333,
+        "max": 0.9333,
+        "avg": 0.8771
+      }
+    },
+    "47591": {
+      "kbli": "47591",
+      "uraian": "Perdagangan Eceran Furnitur",
+      "cogs": {
+        "min": 0.4274,
+        "max": 0.8747,
+        "avg": 0.6257
+      },
+      "ntb_output": {
+        "min": 0.5624,
+        "max": 0.9304,
+        "avg": 0.8461
+      }
+    },
+    "47592": {
+      "kbli": "47592",
+      "uraian": "Perdagangan Eceran Peralatan Listrik Rumah Tangga, Peralatan Penerangan, dan Perlengkapannya",
+      "cogs": {
+        "min": 0.4031,
+        "max": 0.7616,
+        "avg": 0.6443
+      },
+      "ntb_output": {
+        "min": 0.816,
+        "max": 0.9169,
+        "avg": 0.8615
+      }
+    },
+    "47593": {
+      "kbli": "47593",
+      "uraian": "Perdagangan Eceran Barang Pecah Belah; Perlengkapan Dapur dan Makan",
+      "cogs": {
+        "min": 0.4407,
+        "max": 0.7766,
+        "avg": 0.6109
+      },
+      "ntb_output": {
+        "min": 0.7763,
+        "max": 0.9184,
+        "avg": 0.8699
+      }
+    },
+    "47594": {
+      "kbli": "47594",
+      "uraian": "Perdagangan Eceran Alat Musik",
+      "cogs": {
+        "min": 0.3896,
+        "max": 0.8947,
+        "avg": 0.6457
+      },
+      "ntb_output": {
+        "min": 0.6571,
+        "max": 0.8974,
+        "avg": 0.7801
+      }
+    },
+    "47599": {
+      "kbli": "47599",
+      "uraian": "Perdagangan Eceran Peralatan dan Perlengkapan Rumah Tangga Lainnya YTDL",
+      "cogs": {
+        "min": 0.4746,
+        "max": 0.7043,
+        "avg": 0.5909
+      },
+      "ntb_output": {
+        "min": 0.8056,
+        "max": 0.9363,
+        "avg": 0.8847
+      }
+    },
+    "47611": {
+      "kbli": "47611",
+      "uraian": "Perdagangan Eceran Alat Tulis Menulis dan Gambar",
+      "cogs": {
+        "min": 0.4723,
+        "max": 0.7108,
+        "avg": 0.5839
+      },
+      "ntb_output": {
+        "min": 0.7641,
+        "max": 0.8914,
+        "avg": 0.8555
+      }
+    },
+    "47612": {
+      "kbli": "47612",
+      "uraian": "Perdagangan Eceran Hasil Pencetakan dan Penerbitan",
+      "cogs": {
+        "min": 0.4605,
+        "max": 0.8183,
+        "avg": 0.6284
+      },
+      "ntb_output": {
+        "min": 0.5651,
+        "max": 0.9398,
+        "avg": 0.7852
+      }
+    },
+    "47613": {
+      "kbli": "47613",
+      "uraian": "Perdagangan Eceran Kertas, Kertas Karton, dan Barang dari Kertas/Karton",
+      "cogs": {
+        "min": 0.3656,
+        "max": 0.8607,
+        "avg": 0.6634
+      },
+      "ntb_output": {
+        "min": 0.7483,
+        "max": 0.9023,
+        "avg": 0.8511
+      }
+    },
+    "47620": {
+      "kbli": "47620",
+      "uraian": "Perdagangan Eceran Peralatan dan Perlengkapan Olahraga",
+      "cogs": {
+        "min": 0.4332,
+        "max": 0.8866,
+        "avg": 0.6549
+      },
+      "ntb_output": {
+        "min": 0.6626,
+        "max": 0.9388,
+        "avg": 0.8485
+      }
+    },
+    "47630": {
+      "kbli": "47630",
+      "uraian": "Perdagangan Eceran Alat Permainan dan Mainan",
+      "cogs": {
+        "min": 0.3969,
+        "max": 0.7957,
+        "avg": 0.6034
+      },
+      "ntb_output": {
+        "min": 0.6277,
+        "max": 0.9188,
+        "avg": 0.8253
+      }
+    },
+    "47690": {
+      "kbli": "47690",
+      "uraian": "Perdagangan Eceran Khusus Barang Kesenian dan Rekreasi YTDL",
+      "cogs": {
+        "min": 0.5766,
+        "max": 0.6667,
+        "avg": 0.6216
+      },
+      "ntb_output": {
+        "min": 0.91,
+        "max": 0.9333,
+        "avg": 0.9217
+      }
+    },
+    "47711": {
+      "kbli": "47711",
+      "uraian": "Perdagangan Eceran Pakaian",
+      "cogs": {
+        "min": 0.3953,
+        "max": 0.8523,
+        "avg": 0.6404
+      },
+      "ntb_output": {
+        "min": 0.7364,
+        "max": 0.9324,
+        "avg": 0.8519
+      }
+    },
+    "47712": {
+      "kbli": "47712",
+      "uraian": "Perdagangan Eceran Sepatu, Sandal, dan Alas Kaki Lainnya",
+      "cogs": {
+        "min": 0.443,
+        "max": 0.8325,
+        "avg": 0.6486
+      },
+      "ntb_output": {
+        "min": 0.7007,
+        "max": 0.8883,
+        "avg": 0.8269
+      }
+    },
+    "47713": {
+      "kbli": "47713",
+      "uraian": "Perdagangan Eceran Perlengkapan Pakaian",
+      "cogs": {
+        "min": 0.4642,
+        "max": 0.7653,
+        "avg": 0.6064
+      },
+      "ntb_output": {
+        "min": 0.7472,
+        "max": 0.912,
+        "avg": 0.8572
+      }
+    },
+    "47714": {
+      "kbli": "47714",
+      "uraian": "Perdagangan Eceran Tas, Dompet, Koper, Ransel, dan Sejenisnya",
+      "cogs": {
+        "min": 0.4527,
+        "max": 0.7946,
+        "avg": 0.6677
+      },
+      "ntb_output": {
+        "min": 0.6394,
+        "max": 0.9094,
+        "avg": 0.8198
+      }
+    },
+    "47721": {
+      "kbli": "47721",
+      "uraian": "Perdagangan Eceran Sediaan Farmasi untuk Manusia di Apotek",
+      "cogs": {
+        "min": 0.3869,
+        "max": 0.8659,
+        "avg": 0.6337
+      },
+      "ntb_output": {
+        "min": 0.7944,
+        "max": 0.9397,
+        "avg": 0.8817
+      }
+    },
+    "47722": {
+      "kbli": "47722",
+      "uraian": "Perdagangan Eceran Sediaan Farmasi untuk Manusia Selain di Apotek",
+      "cogs": {
+        "min": 0.3566,
+        "max": 0.8804,
+        "avg": 0.6516
+      },
+      "ntb_output": {
+        "min": 0.6888,
+        "max": 0.9399,
+        "avg": 0.8467
+      }
+    },
+    "47723": {
+      "kbli": "47723",
+      "uraian": "Perdagangan Eceran Obat Bahan Alam untuk Manusia",
+      "cogs": {
+        "min": 0.432,
+        "max": 0.831,
+        "avg": 0.6393
+      },
+      "ntb_output": {
+        "min": 0.7678,
+        "max": 0.9352,
+        "avg": 0.8703
+      }
+    },
+    "47724": {
+      "kbli": "47724",
+      "uraian": "Perdagangan Eceran Kosmetik untuk Manusia",
+      "cogs": {
+        "min": 0.4078,
+        "max": 0.8107,
+        "avg": 0.6379
+      },
+      "ntb_output": {
+        "min": 0.7254,
+        "max": 0.9353,
+        "avg": 0.8452
+      }
+    },
+    "47725": {
+      "kbli": "47725",
+      "uraian": "Perdagangan Eceran Alat Kesehatan untuk Manusia",
+      "cogs": {
+        "min": 0.3538,
+        "max": 0.9,
+        "avg": 0.6416
+      },
+      "ntb_output": {
+        "min": 0.7143,
+        "max": 0.939,
+        "avg": 0.8409
+      }
+    },
+    "47726": {
+      "kbli": "47726",
+      "uraian": "Perdagangan Eceran Obat Farmasi untuk Hewan",
+      "cogs": {
+        "min": 0.4167,
+        "max": 0.7586,
+        "avg": 0.6442
+      },
+      "ntb_output": {
+        "min": 0.6471,
+        "max": 0.7681,
+        "avg": 0.7076
+      }
+    },
+    "47729": {
+      "kbli": "47729",
+      "uraian": "Perdagangan Eceran Bahan Baku Farmasi dan Alat Kesehatan Lainnya",
+      "cogs": {
+        "min": 0.3514,
+        "max": 0.8614,
+        "avg": 0.5912
+      },
+      "ntb_output": {
+        "min": 0.7118,
+        "max": 0.8222,
+        "avg": 0.763
+      }
+    },
+    "47731": {
+      "kbli": "47731",
+      "uraian": "Perdagangan Eceran Alat Fotografi dan PerlengkapannyaNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.5895,
+        "max": 0.899,
+        "avg": 0.7443
+      },
+      "ntb_output": {
+        "min": 0.8317,
+        "max": 0.8317,
+        "avg": 0.8317
+      }
+    },
+    "47732": {
+      "kbli": "47732",
+      "uraian": "Perdagangan Eceran Alat Optik dan Perlengkapannya",
+      "cogs": {
+        "min": 0.3521,
+        "max": 0.7917,
+        "avg": 0.5891
+      },
+      "ntb_output": {
+        "min": 0.76,
+        "max": 0.807,
+        "avg": 0.7858
+      }
+    },
+    "47733": {
+      "kbli": "47733",
+      "uraian": "Perdagangan Eceran Kacamata",
+      "cogs": {
+        "min": 0.6495,
+        "max": 0.8535,
+        "avg": 0.7373
+      },
+      "ntb_output": {
+        "min": 0.6308,
+        "max": 0.9337,
+        "avg": 0.838
+      }
+    },
+    "47734": {
+      "kbli": "47734",
+      "uraian": "Perdagangan Eceran Jam",
+      "cogs": {
+        "min": 0.4229,
+        "max": 0.7282,
+        "avg": 0.6047
+      },
+      "ntb_output": {
+        "min": 0.6655,
+        "max": 0.9098,
+        "avg": 0.8021
+      }
+    },
+    "47735": {
+      "kbli": "47735",
+      "uraian": "Perdagangan Eceran Barang Perhiasan",
+      "cogs": {
+        "min": 0.4363,
+        "max": 0.8793,
+        "avg": 0.7131
+      },
+      "ntb_output": {
+        "min": 0.6972,
+        "max": 0.9317,
+        "avg": 0.8682
+      }
+    },
+    "47742": {
+      "kbli": "47742",
+      "uraian": "Perdagangan Eceran Pakaian, Alas Kaki, dan Perlengkapan Pakaian Bekas",
+      "cogs": {
+        "min": 0.4965,
+        "max": 0.8782,
+        "avg": 0.6664
+      },
+      "ntb_output": {
+        "min": 0.5531,
+        "max": 0.9246,
+        "avg": 0.819
+      }
+    },
+    "47744": {
+      "kbli": "47744",
+      "uraian": "Perdagangan Eceran Barang Listrik dan Elektronik Bekas",
+      "cogs": {
+        "min": 0.3788,
+        "max": 0.8876,
+        "avg": 0.6811
+      },
+      "ntb_output": {
+        "min": 0.8133,
+        "max": 0.9268,
+        "avg": 0.879
+      }
+    },
+    "47746": {
+      "kbli": "47746",
+      "uraian": "Perdagangan Eceran Barang AntikNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.6125,
+        "max": 0.6376,
+        "avg": 0.6251
+      },
+      "ntb_output": {
+        "min": 0.6,
+        "max": 0.6,
+        "avg": 0.6
+      }
+    },
+    "47749": {
+      "kbli": "47749",
+      "uraian": "Perdagangan Eceran Barang Bekas Lainnya",
+      "cogs": {
+        "min": 0.3607,
+        "max": 0.8914,
+        "avg": 0.5603
+      },
+      "ntb_output": {
+        "min": 0.8305,
+        "max": 0.9332,
+        "avg": 0.8926
+      }
+    },
+    "47751": {
+      "kbli": "47751",
+      "uraian": "Perdagangan Eceran Hewan Kesayangan (Pet Animals)",
+      "cogs": {
+        "min": 0.4418,
+        "max": 0.7989,
+        "avg": 0.6361
+      },
+      "ntb_output": {
+        "min": 0.8311,
+        "max": 0.9314,
+        "avg": 0.8661
+      }
+    },
+    "47752": {
+      "kbli": "47752",
+      "uraian": "Perdagangan Eceran Hewan Ternak dan Bibit Hewan",
+      "cogs": {
+        "min": 0.3974,
+        "max": 0.8792,
+        "avg": 0.6831
+      },
+      "ntb_output": {
+        "min": 0.7566,
+        "max": 0.9382,
+        "avg": 0.8588
+      }
+    },
+    "47753": {
+      "kbli": "47753",
+      "uraian": "Perdagangan Eceran Ikan dan Biota Air Hidup Lainnya",
+      "cogs": {
+        "min": 0.3534,
+        "max": 0.85,
+        "avg": 0.5903
+      },
+      "ntb_output": {
+        "min": 0.6971,
+        "max": 0.9394,
+        "avg": 0.8364
+      }
+    },
+    "47754": {
+      "kbli": "47754",
+      "uraian": "Perdagangan Eceran Pakan Ternak/Unggas/Ikan dan Hewan Kesayangan",
+      "cogs": {
+        "min": 0.5197,
+        "max": 0.8756,
+        "avg": 0.7474
+      },
+      "ntb_output": {
+        "min": 0.6328,
+        "max": 0.908,
+        "avg": 0.803
+      }
+    },
+    "47761": {
+      "kbli": "47761",
+      "uraian": "Perdagangan Eceran Bunga Potong/Florist",
+      "cogs": {
+        "min": 0.4796,
+        "max": 0.755,
+        "avg": 0.6071
+      },
+      "ntb_output": {
+        "min": 0.5567,
+        "max": 0.9265,
+        "avg": 0.7647
+      }
+    },
+    "47763": {
+      "kbli": "47763",
+      "uraian": "Perdagangan Eceran Pupuk dan Pemberantas Hama",
+      "cogs": {
+        "min": 0.3729,
+        "max": 0.8976,
+        "avg": 0.7251
+      },
+      "ntb_output": {
+        "min": 0.7493,
+        "max": 0.9363,
+        "avg": 0.8797
+      }
+    },
+    "47764": {
+      "kbli": "47764",
+      "uraian": "Perdagangan Eceran Perlengkapan dan Media Tanaman Hias",
+      "cogs": {
+        "min": 0.46,
+        "max": 0.472,
+        "avg": 0.466
+      },
+      "ntb_output": {
+        "min": 0.8519,
+        "max": 0.9242,
+        "avg": 0.888
+      }
+    },
+    "47771": {
+      "kbli": "47771",
+      "uraian": "Perdagangan Eceran Minyak Tanah",
+      "cogs": {
+        "min": 0.4268,
+        "max": 0.7788,
+        "avg": 0.6542
+      },
+      "ntb_output": {
+        "min": 0.6148,
+        "max": 0.9175,
+        "avg": 0.8038
+      }
+    },
+    "47772": {
+      "kbli": "47772",
+      "uraian": "Perdagangan Eceran Gas Tabung LPG",
+      "cogs": {
+        "min": 0.3892,
+        "max": 0.869,
+        "avg": 0.732
+      },
+      "ntb_output": {
+        "min": 0.6933,
+        "max": 0.9355,
+        "avg": 0.8335
+      }
+    },
+    "47773": {
+      "kbli": "47773",
+      "uraian": "Perdagangan Eceran Bahan Kimia",
+      "cogs": {
+        "min": 0.5,
+        "max": 0.8958,
+        "avg": 0.736
+      },
+      "ntb_output": {
+        "min": 0.6749,
+        "max": 0.8902,
+        "avg": 0.8276
+      }
+    },
+    "47774": {
+      "kbli": "47774",
+      "uraian": "Perdagangan Eceran Aromatik/Penyegar (Minyak Asiri)NTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.425,
+        "max": 0.6964,
+        "avg": 0.553
+      },
+      "ntb_output": {
+        "min": 0.9215,
+        "max": 0.9215,
+        "avg": 0.9215
+      }
+    },
+    "47779": {
+      "kbli": "47779",
+      "uraian": "Perdagangan Eceran Bahan Kimia, Aromatik/Penyegar (Minyak Asiri), dan Bahan Bakar Selain Bahan Bakar untuk Kendaraan Bermotor Lainnya",
+      "cogs": {
+        "min": 0.6,
+        "max": 0.9,
+        "avg": 0.7996
+      },
+      "ntb_output": {
+        "min": 0.5735,
+        "max": 0.8824,
+        "avg": 0.7019
+      }
+    },
+    "47781": {
+      "kbli": "47781",
+      "uraian": "Perdagangan Eceran Cendera mata, Kerajinan, dan Barang-barang Keagamaan",
+      "cogs": {
+        "min": 0.5759,
+        "max": 0.6797,
+        "avg": 0.641
+      },
+      "ntb_output": {
+        "min": 0.7455,
+        "max": 0.9078,
+        "avg": 0.8267
+      }
+    },
+    "47782": {
+      "kbli": "47782",
+      "uraian": "Perdagangan Eceran LukisanCOGS rentang nol - tidak dipakaiNTB/Output rentang nol - pakai acuan Kategori G",
+      "cogs": {
+        "min": 0.7692,
+        "max": 0.7692,
+        "avg": 0.7692
+      },
+      "ntb_output": {
+        "min": 0.8889,
+        "max": 0.8889,
+        "avg": 0.8889
+      }
+    },
+    "47791": {
+      "kbli": "47791",
+      "uraian": "Perdagangan Eceran Berbagai Macam Mesin dan Perlengkapannya",
+      "cogs": {
+        "min": 0.5793,
+        "max": 0.8882,
+        "avg": 0.7423
+      },
+      "ntb_output": {
+        "min": 0.6905,
+        "max": 0.8396,
+        "avg": 0.7702
+      }
+    },
+    "47793": {
+      "kbli": "47793",
+      "uraian": "Perdagangan Eceran Alat Transportasi Air dan Perlengkapannya",
+      "cogs": {
+        "min": 0.4731,
+        "max": 0.8416,
+        "avg": 0.7125
+      },
+      "ntb_output": {
+        "min": 0.6571,
+        "max": 0.8376,
+        "avg": 0.7473
+      }
+    },
+    "47794": {
+      "kbli": "47794",
+      "uraian": "Perdagangan Eceran Alat-alat Pertanian",
+      "cogs": {
+        "min": 0.5452,
+        "max": 0.85,
+        "avg": 0.6957
+      },
+      "ntb_output": {
+        "min": 0.6199,
+        "max": 0.9046,
+        "avg": 0.7958
+      }
+    },
+    "47795": {
+      "kbli": "47795",
+      "uraian": "Perdagangan Eceran Perlengkapan Pengendara Kendaraan Bermotor",
+      "cogs": {
+        "min": 0.389,
+        "max": 0.6627,
+        "avg": 0.5432
+      },
+      "ntb_output": {
+        "min": 0.7437,
+        "max": 0.9335,
+        "avg": 0.8816
+      }
+    },
+    "47796": {
+      "kbli": "47796",
+      "uraian": "Perdagangan Eceran Pembungkus dari Plastik",
+      "cogs": {
+        "min": 0.4104,
+        "max": 0.867,
+        "avg": 0.6614
+      },
+      "ntb_output": {
+        "min": 0.7408,
+        "max": 0.9312,
+        "avg": 0.8467
+      }
+    },
+    "47799": {
+      "kbli": "47799",
+      "uraian": "Perdagangan Eceran Barang Baru Lainnya YTDL",
+      "cogs": {
+        "min": 0.5909,
+        "max": 0.8673,
+        "avg": 0.7256
+      },
+      "ntb_output": {
+        "min": 0.7529,
+        "max": 0.8297,
+        "avg": 0.7959
+      }
+    },
+    "47811": {
+      "kbli": "47811",
+      "uraian": "Perdagangan Eceran Mobil Baru",
+      "cogs": {
+        "min": 0.4186,
+        "max": 0.8858,
+        "avg": 0.7328
+      },
+      "ntb_output": {
+        "min": 0.6852,
+        "max": 0.9328,
+        "avg": 0.8674
+      }
+    },
+    "47812": {
+      "kbli": "47812",
+      "uraian": "Perdagangan Eceran Mobil Bekas",
+      "cogs": {
+        "min": 0.4834,
+        "max": 0.894,
+        "avg": 0.7153
+      },
+      "ntb_output": {
+        "min": 0.5826,
+        "max": 0.9348,
+        "avg": 0.8572
+      }
+    },
+    "47820": {
+      "kbli": "47820",
+      "uraian": "Perdagangan Eceran Suku Cadang dan Aksesori Mobil",
+      "cogs": {
+        "min": 0.3796,
+        "max": 0.863,
+        "avg": 0.6539
+      },
+      "ntb_output": {
+        "min": 0.7003,
+        "max": 0.9381,
+        "avg": 0.882
+      }
+    },
+    "47831": {
+      "kbli": "47831",
+      "uraian": "Perdagangan Eceran Sepeda Motor Baru",
+      "cogs": {
+        "min": 0.5388,
+        "max": 0.8755,
+        "avg": 0.7113
+      },
+      "ntb_output": {
+        "min": 0.815,
+        "max": 0.9329,
+        "avg": 0.8892
+      }
+    },
+    "47832": {
+      "kbli": "47832",
+      "uraian": "Perdagangan Eceran Sepeda Motor Bekas",
+      "cogs": {
+        "min": 0.4027,
+        "max": 0.8974,
+        "avg": 0.711
+      },
+      "ntb_output": {
+        "min": 0.6271,
+        "max": 0.9309,
+        "avg": 0.8446
+      }
+    },
+    "47833": {
+      "kbli": "47833",
+      "uraian": "Perdagangan Eceran Suku Cadang Sepeda Motor dan Aksesorinya",
+      "cogs": {
+        "min": 0.3816,
+        "max": 0.8931,
+        "avg": 0.6499
+      },
+      "ntb_output": {
+        "min": 0.5657,
+        "max": 0.9368,
+        "avg": 0.8769
+      }
+    }
+  }
+}
