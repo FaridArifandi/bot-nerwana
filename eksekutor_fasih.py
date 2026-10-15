@@ -2003,8 +2003,25 @@ def main():
     if not start_debug_chrome():
         return
 
+    # Pilihan Modul Utama
+    print("\n" + "=" * 65)
+    print("PILIH TUGAS / MODUL BOT:")
+    print("  [1] Data Cleaning (DC Terkena Flag - Evaluasi Rasio NTB/Output) [Default]")
+    print("  [2] Inkonsistensi Sosek (sosek_33 - Verifikasi NIK 6 Digit Kembar)")
+    print("  [0] Keluar")
+    print("=" * 65)
+    pilih_modul = input("\nMasukkan pilihan tugas [1/2/0] (default 1): ").strip() or "1"
+
+    if pilih_modul == "2":
+        from eksekutor_sosek import main as main_sosek
+        main_sosek()
+        return
+    elif pilih_modul == "0":
+        print("[INFO] Program selesai.")
+        return
+
     # Tugas 6: Nonaktifkan sync_review sebagai sumber nilai
-    print("[INFO] Mode LIVE ON-THE-FLY aktif: Nilai dibaca langsung dari kuesioner FASIH.")
+    print("\n[INFO] Modul Data Cleaning Aktif: Nilai dibaca langsung dari kuesioner FASIH.")
     print("       File Excel lama dinonaktifkan sebagai sumber usulan eksekusi.")
 
     conn = get_connection()
