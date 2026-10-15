@@ -6,8 +6,380 @@ from openpyxl.utils import get_column_letter
 
 from database import DB_PATH, get_connection
 from threshold_manager import get_threshold
+from config import TOL_RASIO_SELANCAR, FAKTOR_KALI, FAKTOR_BAGI, CAP_NILAI_BARU
 
 EXCEL_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "review_usulan.xlsx")
+
+
+class HasilEvaluasi(dict):
+    """
+    Subclass dict yang kompatibel dua arah:
+    - Dict key: res['status'], res['field'], res['nilai_baru'], dll.
+    - Dot attribute: res.status, res.aksi, res.field, res.nilai_baru, res.faktor, res.operasi, dll.
+    """
+    def __getattr__(self, name):
+        if name == 'aksi':
+            return self.get('status')
+        if name == 'faktor':
+            op = self.get('operasi')
+            if op == 'x10':
+                return 10
+            elif op == ':10':
+                return 0.1
+            nl = self.get('nilai_lama')
+            nb = self.get('nilai_baru')
+            if nl and nb and nl > 0:
+                return round(nb / nl, 4)
+            return None
+        if name in self:
+            return self[name]
+        return None
+
+
+def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_selancar: float = None) -> HasilEvaluasi:
+    """
+    Evaluasi nilai FASIH untuk usulan koreksi sesuai Guardrail G1-G8 (PRD §6).
+    Fungsi murni tanpa I/O.
+    
+    Parameters:
+        nilai: dict berisi {'pbj': int/float, 'prod': int/float, 'ops': int/float, 'beli': int/float}
+        kategori: kode kategori KBLI (mis. 'A', 'C', 'G')
+        kbli: 5 digit KBLI (mis. '47111', '01121')
+        blok: 'biasa' (isian 27/28) atau 'usaha_2026' (isian 30/31)
+        rasio_selancar: float rasio dari tabel Selancar (untuk cek toleransi G2)
+        
+    Returns:
+        HasilEvaluasi (dict): {
+            'status': 'APPLY' | 'SKIP' | 'NEED_REVIEW',
+            'field': str | None,              # 'pbj', 'prod', atau 'ops' jika APPLY
+            'nilai_lama': float | None,
+            'nilai_baru': float | None,
+            'rasio_lama': float,
+            'rasio_baru': float | None,
+            'alasan': str,
+            'kode_catatan': str,              # '#DC_01' jika APPLY
+            'acuan_threshold': str,
+            'operasi': str | None,
+            'faktor': float | None
+        }
+    """
+    pbj = float(nilai.get('pbj') or 0)
+    prod = float(nilai.get('prod') or 0)
+    ops = float(nilai.get('ops') or 0)
+    beli = float(nilai.get('beli') or 0)
+    kat = str(kategori or "G").upper().strip()
+    kbli_str = str(kbli or "").strip()
+    
+    thresh = get_threshold(kat, kbli_str, skala="mikro_kecil")
+    MIN_RATIO = thresh['min']
+    MAX_RATIO = thresh['max']
+    THRESH_LEVEL = thresh['level']
+    THRESH_LABEL = f"{THRESH_LEVEL} [{MIN_RATIO:.2f} - {MAX_RATIO:.2f}]"
+    
+    # G7: Kasus khusus semua biaya & pendapatan 0
+    if pbj == 0 and prod == 0 and ops == 0 and beli == 0:
+        return HasilEvaluasi({
+            'status': 'NEED_REVIEW',
+            'field': None,
+            'nilai_lama': None,
+            'nilai_baru': None,
+            'rasio_lama': 0.0,
+            'rasio_baru': None,
+            'alasan': f"Semua nilai biaya & pendapatan 0 ({THRESH_LABEL}). Butuh konfirmasi lapangan.",
+            'kode_catatan': "",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': None,
+            'faktor': None
+        })
+
+    # Tugas Tambahan: Kasus PBJ = 0 tetapi pengeluaran ada
+    # Imputasi pendapatan (PBJ) yang wajar sesuai rasio kategori agar tidak melonjak terlalu tinggi
+    if pbj == 0 and (prod > 0 or ops > 0 or beli > 0):
+        biaya_total = prod + ops
+        aset_tanah = float(nilai.get('aset_tanah') or 0.0)
+
+        # Skala target rasio: untuk pertanian (Kategori A), aset tanah besar mencerminkan kapasitas produksi & pendapatan lebih tinggi
+        if kategori == 'A' and aset_tanah > 0:
+            if aset_tanah >= 100_000_000:
+                bobot_rentang = 0.65  # Aset tanah besar (kebun/peternakan komersial): target rasio tinggi
+            elif aset_tanah >= 30_000_000:
+                bobot_rentang = 0.50  # Aset tanah menengah
+            else:
+                bobot_rentang = 0.40  # Aset tanah kecil/pekarangan
+        else:
+            bobot_rentang = 0.40
+
+        # Target rasio di dalam rentang threshold
+        target_r = MIN_RATIO + (MAX_RATIO - MIN_RATIO) * bobot_rentang
+        if target_r >= 0.95:
+            target_r = 0.85
+        elif target_r <= 0.05:
+            target_r = 0.15
+
+        # Hitung estimasi PBJ agar rasio mendekati target_r
+        # Rasio = (PBJ - beli - biaya_total) / (PBJ - beli)
+        estimasi_pbj = beli + (biaya_total / max(0.05, (1.0 - target_r)))
+
+        # Bulatkan ke angka rapi (kelipatan 500rb atau 1jt)
+        if estimasi_pbj < 5_000_000:
+            step = 100_000
+        elif estimasi_pbj < 50_000_000:
+            step = 500_000
+        else:
+            step = 1_000_000
+
+        pbj_kandidat = round(estimasi_pbj / step) * step
+
+        # Verifikasi rasio hasil pembulatan masuk rentang
+        out_cand = pbj_kandidat - beli
+        if out_cand > 0:
+            ntb_cand = out_cand - biaya_total
+            r_cand = ntb_cand / out_cand
+            while r_cand < MIN_RATIO:
+                pbj_kandidat += step
+                out_cand = pbj_kandidat - beli
+                ntb_cand = out_cand - biaya_total
+                r_cand = ntb_cand / out_cand
+            while r_cand > MAX_RATIO and (pbj_kandidat - step - beli) > 0:
+                pbj_kandidat -= step
+                out_cand = pbj_kandidat - beli
+                ntb_cand = out_cand - biaya_total
+                r_cand = ntb_cand / out_cand
+        else:
+            r_cand = 0.0
+
+        # Cek batas CAP_NILAI_BARU (250 jt skala tahunan)
+        bulan_beroperasi = max(1, int(nilai.get('bulan_beroperasi') or 1))
+        skala_faktor = bulan_beroperasi if blok == "usaha_2026" else 1
+        val_skala = pbj_kandidat * skala_faktor
+
+        if val_skala > CAP_NILAI_BARU:
+            skala_txt = f" (skala tahunan: {int(val_skala):,})" if blok == "usaha_2026" else ""
+            return HasilEvaluasi({
+                'status': 'NEED_REVIEW',
+                'field': None,
+                'nilai_lama': 0.0,
+                'nilai_baru': None,
+                'rasio_lama': 0.0,
+                'rasio_baru': None,
+                'alasan': f"Estimasi PBJ ({int(pbj_kandidat):,}{skala_txt}) melebihi CAP_NILAI_BARU ({CAP_NILAI_BARU:,}) ({THRESH_LABEL}).",
+                'kode_catatan': "",
+                'acuan_threshold': THRESH_LABEL,
+                'operasi': None,
+                'faktor': None
+            })
+
+        if MIN_RATIO <= r_cand <= MAX_RATIO and pbj_kandidat > 0:
+            aset_txt = f" & aset tanah {int(aset_tanah):,}" if aset_tanah > 0 else ""
+            return HasilEvaluasi({
+                'status': 'APPLY',
+                'field': 'pbj',
+                'nilai_lama': 0.0,
+                'nilai_baru': float(pbj_kandidat),
+                'rasio_lama': 0.0,
+                'rasio_baru': r_cand,
+                'alasan': f"Imputasi PBJ rasio wajar ({r_cand:.4f}): 0 -> {int(pbj_kandidat):,} berbasis total biaya {int(biaya_total):,}{aset_txt} ({THRESH_LABEL})",
+                'kode_catatan': "#DC_01",
+                'acuan_threshold': THRESH_LABEL,
+                'operasi': 'imputasi_wajar',
+                'faktor': None
+            })
+
+
+
+    if pbj == 0 and prod == 0 and ops == 0 and beli == 0:
+        return HasilEvaluasi({
+            'status': 'NEED_REVIEW',
+            'field': None,
+            'nilai_lama': None,
+            'nilai_baru': None,
+            'rasio_lama': 0.0,
+            'rasio_baru': None,
+            'alasan': f"Semua nilai biaya & pendapatan 0 ({THRESH_LABEL}). Butuh konfirmasi lapangan.",
+            'kode_catatan': "",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': None,
+            'faktor': None
+        })
+
+    output = pbj - beli
+    if output <= 0:
+        return HasilEvaluasi({
+            'status': 'NEED_REVIEW',
+            'field': None,
+            'nilai_lama': None,
+            'nilai_baru': None,
+            'rasio_lama': 0.0,
+            'rasio_baru': None,
+            'alasan': f"Output <= 0 (PBJ {pbj:,.0f} - Beli {beli:,.0f} = {output:,.0f}). Tidak dapat menghitung rasio ({THRESH_LABEL}).",
+            'kode_catatan': "",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': None,
+            'faktor': None
+        })
+        
+    ntb = output - prod - ops
+    rasio = ntb / output
+
+    # G2: Bandingkan rasio hitungan FASIH dengan rasio_selancar (toleransi TOL_RASIO_SELANCAR = 0.02)
+    if rasio_selancar is not None:
+        selisih = abs(rasio - float(rasio_selancar))
+        if selisih > TOL_RASIO_SELANCAR:
+            return HasilEvaluasi({
+                'status': 'NEED_REVIEW',
+                'field': None,
+                'nilai_lama': None,
+                'nilai_baru': None,
+                'rasio_lama': rasio,
+                'rasio_baru': None,
+                'alasan': f"Selisih rasio FASIH ({rasio:.4f}) vs Selancar ({float(rasio_selancar):.4f}) = {selisih:.4f} > {TOL_RASIO_SELANCAR}. Input tidak sama dengan Selancar ({THRESH_LABEL}).",
+                'kode_catatan': "",
+                'acuan_threshold': THRESH_LABEL,
+                'operasi': None,
+                'faktor': None
+            })
+
+    # G1: Jika rasio FASIH sudah dalam rentang threshold
+    if MIN_RATIO <= rasio <= MAX_RATIO:
+        return HasilEvaluasi({
+            'status': 'SKIP',
+            'field': None,
+            'nilai_lama': None,
+            'nilai_baru': None,
+            'rasio_lama': rasio,
+            'rasio_baru': rasio,
+            'alasan': f"Sudah dalam rentang threshold {THRESH_LABEL} (rasio: {rasio:.4f}). Tidak perlu perbaikan.",
+            'kode_catatan': "",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': None,
+            'faktor': None
+        })
+
+    # Tugas 7: Skala bulanan vs tahunan untuk blok usaha 2026
+    bulan_beroperasi = max(1, int(nilai.get('bulan_beroperasi') or 1))
+    skala_faktor = bulan_beroperasi if blok == "usaha_2026" else 1
+
+    # G3: Kandidat koreksi hanya salah-nol (x10 atau :10) pada tepat satu field (pbj, prod, ops)
+    candidate_fields = ['pbj', 'prod', 'ops']
+    valid_candidates = []
+    cap_exceeded_candidates = []
+    
+    for f in candidate_fields:
+        val = float(nilai.get(f) or 0)
+        # G4: Field bernilai 0 atau kosong tidak boleh diubah
+        if val <= 0:
+            continue
+            
+        # Kandidat 1: val * FAKTOR_KALI (x10)
+        new_val_kali = val * FAKTOR_KALI
+        cand_pbj = new_val_kali if f == 'pbj' else pbj
+        cand_prod = new_val_kali if f == 'prod' else prod
+        cand_ops = new_val_kali if f == 'ops' else ops
+        cand_beli = beli
+        
+        cand_out = cand_pbj - cand_beli
+        if cand_out > 0:
+            cand_ntb = cand_out - cand_prod - cand_ops
+            cand_r = cand_ntb / cand_out
+            if MIN_RATIO <= cand_r <= MAX_RATIO:
+                # G6 & Tugas 7: Cap nilai baru untuk field yang DINAIKKAN
+                # Harus dibandingkan pada skala yang sama dengan Selancar (tahunan)
+                val_skala_selancar = new_val_kali * skala_faktor
+                if val_skala_selancar > CAP_NILAI_BARU:
+                    cap_exceeded_candidates.append({
+                        'field': f,
+                        'operasi': 'x10',
+                        'nilai_lama': val,
+                        'nilai_baru': new_val_kali,
+                        'nilai_skala_selancar': val_skala_selancar,
+                        'rasio_baru': cand_r
+                    })
+                else:
+                    valid_candidates.append({
+                        'field': f,
+                        'operasi': 'x10',
+                        'nilai_lama': val,
+                        'nilai_baru': new_val_kali,
+                        'rasio_baru': cand_r
+                    })
+                    
+        # Kandidat 2: val / FAKTOR_BAGI (:10)
+        # G4: :10 hanya jika nilai habis dibagi 10
+        if int(val) % FAKTOR_BAGI == 0:
+            new_val_bagi = val / FAKTOR_BAGI
+            cand_pbj = new_val_bagi if f == 'pbj' else pbj
+            cand_prod = new_val_bagi if f == 'prod' else prod
+            cand_ops = new_val_bagi if f == 'ops' else ops
+            cand_beli = beli
+            
+            cand_out = cand_pbj - cand_beli
+            if cand_out > 0:
+                cand_ntb = cand_out - cand_prod - cand_ops
+                cand_r = cand_ntb / cand_out
+                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                    valid_candidates.append({
+                        'field': f,
+                        'operasi': ':10',
+                        'nilai_lama': val,
+                        'nilai_baru': new_val_bagi,
+                        'rasio_baru': cand_r
+                    })
+
+    # G5: Jika lolos tepat satu -> APPLY. Jika lebih dari satu (ambigu) atau nol -> NEED_REVIEW
+    if len(valid_candidates) == 1:
+        c = valid_candidates[0]
+        faktor_val = 10 if c['operasi'] == 'x10' else 0.1
+        return HasilEvaluasi({
+            'status': 'APPLY',
+            'field': c['field'],
+            'nilai_lama': c['nilai_lama'],
+            'nilai_baru': c['nilai_baru'],
+            'rasio_lama': rasio,
+            'rasio_baru': c['rasio_baru'],
+            'alasan': f"Koreksi salah-nol ({c['operasi']}) pada {c['field'].upper()}: {int(c['nilai_lama']):,} -> {int(c['nilai_baru']):,} | Rasio: {rasio:.4f} -> {c['rasio_baru']:.4f} ({THRESH_LABEL})",
+            'kode_catatan': "#DC_01",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': c['operasi'],
+            'faktor': faktor_val
+        })
+    elif len(valid_candidates) > 1:
+        daftar = ", ".join([f"{c['field']} ({c['operasi']})" for c in valid_candidates])
+        return HasilEvaluasi({
+            'status': 'NEED_REVIEW',
+            'field': None,
+            'nilai_lama': None,
+            'nilai_baru': None,
+            'rasio_lama': rasio,
+            'rasio_baru': None,
+            'alasan': f"Ambigu: {len(valid_candidates)} kandidat koreksi masuk rentang ({daftar}) ({THRESH_LABEL}). Butuh konfirmasi lapangan.",
+            'kode_catatan': "",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': None,
+            'faktor': None
+        })
+    else:
+        if cap_exceeded_candidates:
+            c_cap = cap_exceeded_candidates[0]
+            skala_info = f" (skala tahunan: {int(c_cap.get('nilai_skala_selancar', c_cap['nilai_baru'])):,})" if blok == "usaha_2026" else ""
+            alasan = f"Kandidat koreksi {c_cap['field'].upper()} ({int(c_cap['nilai_lama']):,} -> {int(c_cap['nilai_baru']):,}{skala_info}) melebihi CAP_NILAI_BARU ({CAP_NILAI_BARU:,}) ({THRESH_LABEL})."
+        else:
+            alasan = f"Tidak ada kandidat salah-nol (x10 / :10) yang membuat rasio masuk rentang {THRESH_LABEL}. Rasio saat ini {rasio:.4f}."
+            
+        return HasilEvaluasi({
+            'status': 'NEED_REVIEW',
+            'field': None,
+            'nilai_lama': None,
+            'nilai_baru': None,
+            'rasio_lama': rasio,
+            'rasio_baru': None,
+            'alasan': alasan,
+            'kode_catatan': "",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': None,
+            'faktor': None
+        })
+
+
 
 def calculate_usulan(row, kategori=None):
     pbj = float(row['pbj'] or 0)
@@ -473,7 +845,10 @@ def process_and_export():
     export_rows = []
     
     for r in rows:
-        res = calculate_usulan(r)
+        # B2 fix: Konversi sqlite3.Row ke dict agar isinstance(row, dict) di calculate_usulan
+        # berfungsi benar untuk membaca kategori dan kbli dari baris DB
+        r_dict = dict(r)
+        res = calculate_usulan(r_dict)
         
         # Simpan usulan ke database (hanya jika belum APPLIED / SUBMITTED)
         current_status = r['status']

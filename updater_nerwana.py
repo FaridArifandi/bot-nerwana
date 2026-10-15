@@ -2,7 +2,7 @@ import time
 import urllib.parse
 import re
 from database import get_connection, log_audit, upsert_kasus
-from kalkulator_usulan import calculate_usulan
+from config import STATUS_FINAL
 
 NERWANA_BASE_URL = "https://nerwana-aceh.web.bps.go.id/selancar2026/dc-terkena-flag"
 NERWANA_LANDING_URL = "https://nerwana-aceh.web.bps.go.id/selancar2026/landing"
@@ -257,35 +257,37 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 session_skip_aids.add(aid)
                 continue
 
-            # Periksa riwayat status di DB lokal
-            existing = conn.execute("SELECT * FROM kasus_nerwana WHERE assignment_id = ?", (aid,)).fetchone()
-            if not existing and nama:
-                existing = conn.execute("SELECT * FROM kasus_nerwana WHERE nama_usaha = ?", (nama,)).fetchone()
+            # Periksa riwayat status di DB lokal menggunakan (assignment_id, nama_usaha)
+            existing = None
+            if aid and nama:
+                existing = conn.execute(
+                    "SELECT * FROM kasus_nerwana WHERE assignment_id = ? AND nama_usaha = ?",
+                    (aid, nama)
+                ).fetchone()
+            if not existing and aid:
+                existing = conn.execute(
+                    "SELECT * FROM kasus_nerwana WHERE assignment_id = ?",
+                    (aid,)
+                ).fetchone()
 
             db_row = None
             if existing:
                 ex_stat = existing['status']
-                # Jika sudah pernah selesai, error FASIH, KBLI bukan target, atau rasio normal (SKIP): lewati
-                if ex_stat in ['COMPLETED', 'SUBMITTED', 'FASIH_FORBIDDEN', 'KBLI_MISMATCH', 'SKIP', 'NEED_REVIEW']:
+                # Lewati jika status sudah final (PRD §7.1 & config.STATUS_FINAL)
+                if ex_stat in STATUS_FINAL or ex_stat == 'SUBMITTED':
                     session_skip_aids.add(aid)
                     continue
                 # Jika sudah di-approve di DB dan nilai barunya lengkap, pakai nilai DB
                 if ex_stat == 'APPROVED' and existing['nilai_baru_pbj'] is not None:
                     db_row = dict(existing)
 
-            # Jika belum ada nilai usulan approved di DB, hitung langsung secara on-the-fly dari baris live
+            # B3 fix: Tidak lagi menghitung usulan on-the-fly dari atribut Selancar.
+            # Selancar hanya menjadi antrean. Nilai akan dibaca langsung dari FASIH saat eksekusi.
             if not db_row:
-                pbj = to_float(sim_btn.get_attribute("data-pbj"))
-                prod = to_float(sim_btn.get_attribute("data-prod"))
-                ops = to_float(sim_btn.get_attribute("data-ops"))
-                beli = to_float(sim_btn.get_attribute("data-beli"))
-                nonops = to_float(sim_btn.get_attribute("data-nonops"))
-                lain = to_float(sim_btn.get_attribute("data-lain"))
-                output = to_float(sim_btn.get_attribute("data-output"))
-                ntb = to_float(sim_btn.get_attribute("data-ntb"))
-                rasio = to_float(sim_btn.get_attribute("data-rasio"))
-                meta_text = sim_btn.get_attribute("data-meta") or ""
                 link_fasih = sim_btn.get_attribute("data-link") or ""
+                rasio_selancar = to_float(sim_btn.get_attribute("data-rasio"))
+                meta_text = sim_btn.get_attribute("data-meta") or ""
+                data_kunci = tl_select.get_attribute("data-kunci") or ""
 
                 kbli = ""
                 deskripsi_kbli = ""
@@ -296,51 +298,6 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 else:
                     kbli = meta_text.strip()
 
-                calc_input = {
-                    'pbj': pbj,
-                    'prod': prod,
-                    'ops': ops,
-                    'beli': beli,
-                    'nonops': nonops,
-                    'lain': lain,
-                    'output': output,
-                    'ntb': ntb,
-                    'rasio': rasio,
-                    'kategori': kat,
-                    'kbli': kbli
-                }
-                usulan = calculate_usulan(calc_input, kategori=kat)
-
-                if usulan['status'] == 'SKIP':
-                    print(f"[SELANCAR-SKIP] '{nama}' ({aid}) - Rasio sudah normal ({rasio:.2f}). Dilewati.")
-                    session_skip_aids.add(aid)
-                    conn.execute("""
-                        INSERT INTO kasus_nerwana (
-                            assignment_id, nama_usaha, kabkota, kategori, kbli, deskripsi_kbli, link_fasih,
-                            pbj, prod, ops, beli, nonops, lain, output, ntb, rasio,
-                            filter_spesifik, tindak_lanjut, status, alasan_review
-                        ) VALUES (?, ?, '1175', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?, 'SKIP', ?)
-                        ON CONFLICT(assignment_id, nama_usaha) DO UPDATE SET status = 'SKIP', alasan_review = excluded.alasan_review
-                    """, (aid, nama, kat, kbli, deskripsi_kbli, link_fasih, pbj, prod, ops, beli, nonops, lain, output, ntb, rasio, stat, usulan['alasan']))
-                    conn.commit()
-                    continue
-
-                if usulan['status'] == 'NEED_REVIEW':
-                    print(f"[SELANCAR-NEED_REVIEW] '{nama}' ({aid}) - {usulan['alasan']}. Dilewati untuk review manual.")
-                    session_skip_aids.add(aid)
-                    conn.execute("""
-                        INSERT INTO kasus_nerwana (
-                            assignment_id, nama_usaha, kabkota, kategori, kbli, deskripsi_kbli, link_fasih,
-                            pbj, prod, ops, beli, nonops, lain, output, ntb, rasio,
-                            filter_spesifik, tindak_lanjut, status, alasan_review
-                        ) VALUES (?, ?, '1175', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'live', ?, 'NEED_REVIEW', ?)
-                        ON CONFLICT(assignment_id, nama_usaha) DO UPDATE SET status = 'NEED_REVIEW', alasan_review = excluded.alasan_review
-                    """, (aid, nama, kat, kbli, deskripsi_kbli, link_fasih, pbj, prod, ops, beli, nonops, lain, output, ntb, rasio, stat, usulan['alasan']))
-                    conn.commit()
-                    continue
-
-                # Usulan perbaikan valid (status PENDING dari heuristik) -> Siapkan db_row dan set APPROVED
-                data_kunci = tl_select.get_attribute("data-kunci") or ""
                 db_row = {
                     'assignment_id': aid,
                     'nama_usaha': nama,
@@ -349,37 +306,11 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                     'kbli': kbli,
                     'deskripsi_kbli': deskripsi_kbli,
                     'link_fasih': link_fasih,
-                    'pbj': pbj,
-                    'prod': prod,
-                    'ops': ops,
-                    'beli': beli,
-                    'nonops': nonops,
-                    'lain': lain,
-                    'output': output,
-                    'ntb': ntb,
-                    'rasio': rasio,
-                    'filter_spesifik': 'live_selancar',
+                    'rasio_selancar': rasio_selancar,
                     'tindak_lanjut': stat,
-                    'tindak_lanjut_oleh': '',
                     'data_kunci': data_kunci,
-                    'status': 'APPROVED',
-                    'alasan_review': usulan.get('alasan', ''),
-                    'nilai_baru_pbj': usulan['pbj_baru'],
-                    'nilai_baru_prod': usulan['prod_baru'],
-                    'nilai_baru_ops': usulan['ops_baru'],
-                    'rasio_baru': usulan['rasio_baru'],
-                    'skor_usulan': usulan['skor'],
-                    'alasan_usulan': usulan['alasan'],
-                    'kode_catatan': usulan.get('kode_catatan', ''),
+                    'status': 'PENDING',
                 }
-                upsert_kasus(db_row)
-                conn.execute("""
-                    UPDATE kasus_nerwana SET 
-                        nilai_baru_pbj = ?, nilai_baru_prod = ?, nilai_baru_ops = ?, 
-                        rasio_baru = ?, skor_usulan = ?, alasan_usulan = ?, kode_catatan = ?, status = 'APPROVED'
-                    WHERE assignment_id = ? AND nama_usaha = ?
-                """, (usulan['pbj_baru'], usulan['prod_baru'], usulan['ops_baru'], usulan['rasio_baru'], usulan['skor'], usulan['alasan'], usulan.get('kode_catatan', ''), aid, nama))
-                conn.commit()
 
             link_btn = tr.locator('a.dc-link-btn').first
             if link_btn.count() == 0:
@@ -393,7 +324,8 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 'nama': nama,
                 'stat': stat,
                 'data_kunci': tl_select.get_attribute("data-kunci") or "",
-                'db_row': db_row
+                'db_row': db_row,
+                'rasio_selancar': db_row.get('rasio_selancar', to_float(sim_btn.get_attribute("data-rasio"))),
             }
     except Exception as e:
         print(f"[SELANCAR-ERROR] Gagal membaca baris tabel: {e}")

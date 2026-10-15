@@ -5,10 +5,25 @@ import socket
 import subprocess
 import random
 import re
+import json
 from datetime import datetime
 from playwright.sync_api import sync_playwright
 
 from database import get_connection, log_audit
+from config import (
+    TOL_RASIO_SELANCAR,
+    FAKTOR_KALI,
+    FAKTOR_BAGI,
+    CAP_NILAI_BARU,
+    MAX_ERR_BERTURUT,
+    N_INTERAKTIF_AWAL,
+    STATUS_FINAL,
+    STATUS_ERROR_TEKNIS,
+    JEDA_ANTAR_ASSIGNMENT_MIN,
+    JEDA_ANTAR_ASSIGNMENT_MAX,
+    WAF_COOLDOWN_SECONDS,
+)
+from kalkulator_usulan import evaluasi
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -653,15 +668,19 @@ def lakukan_revoke_dan_edit(page):
 
     # Tunggu Mode Edit aktif (maks 10 detik, poll tiap 0.5s)
     for _ in range(20):
-        if page.locator('text="Anda sedang mengedit assignment ini", text="Mode Edit"').count() > 0:
-            print("[FASIH] Berhasil masuk ke Mode Edit! Kuesioner siap diisi.")
-            return True
+        try:
+            if page.locator('div:has-text("Anda sedang mengedit assignment ini"), div:has-text("Mode Edit")').count() > 0:
+                print("[FASIH] Berhasil masuk ke Mode Edit! Kuesioner siap diisi.")
+                return True
+        except Exception:
+            pass
         time.sleep(0.5)
+
 
     return True
 
 def buka_blok_ii(page, nama_usaha=""):
-    """Buka Blok II Keterangan Usaha dan pilih usaha yang cocok."""
+    """Buka Blok II Keterangan Usaha dan pilih usaha yang cocok. Mengembalikan (sukses: bool, idx_usaha: int)."""
     print("[FASIH] Membuka menu SE2026 - L BLOK II...")
     
     if cek_fasih_error(page):
@@ -670,38 +689,317 @@ def buka_blok_ii(page, nama_usaha=""):
     page.wait_for_selector('text="SE2026 - L BLOK II"', timeout=20000)
     blok_ii_elem = page.get_by_text("SE2026 - L BLOK II").first
     blok_ii_elem.click()
-    time.sleep(2)
+    time.sleep(1.5)
 
+    # 1. Pastikan submenu Keterangan Usaha/Perusahaan terbuka jika berbentuk collapsible
+    try:
+        sub_ket = page.locator('.fasih-form-sidebar div[title*="Keterangan Usaha/Perusahaan"], div[title="Keterangan Usaha/Perusahaan"]').first
+        if sub_ket.count() > 0 and sub_ket.is_visible():
+            parent_col = sub_ket.locator('..')
+            if parent_col.locator('[data-closed]').count() > 0:
+                print("[FASIH] Membuka collapsible submenu Keterangan Usaha/Perusahaan...")
+                sub_ket.click()
+                time.sleep(1.0)
+    except Exception:
+        pass
+
+    # 2. Cari item usaha yang cocok
     if nama_usaha:
-        # Bersihkan nama usaha dari kurung / karakter panah < ... >
         import re
-        clean_nama = re.sub(r'[\<\>\(\)\[\]]', ' ', nama_usaha).strip()
+        # Bersihkan nama usaha dari kurung sudut / kurung biasa < ... > atau ( ... )
+        # Contoh: "USAHA PERTENAKAN KAMBING <CATUR SETIWAN>" -> "USAHA PERTENAKAN KAMBING"
+        nama_tanpa_kurung = re.sub(r'<[^>]*>|\([^)]*\)|\[[^\]]*\]', '', nama_usaha).strip()
+        # Ekstrak nama pengusaha di dalam kurung jika ada
+        m_owner = re.search(r'<([^>]+)>|\(([^)]+)\)', nama_usaha)
+        owner_name = (m_owner.group(1) or m_owner.group(2)).strip() if m_owner else ""
+
+        print(f"[FASIH] Mencocokkan nama usaha: '{nama_tanpa_kurung}' (Nama lengkap: '{nama_usaha}')")
         usaha_target = None
-        
-        # Coba nama lengkap
-        loc = page.get_by_text(nama_usaha, exact=False)
-        if loc.count() > 0 and loc.first.is_visible():
-            usaha_target = loc.first
-        else:
-            # Coba kata-kata penting (panjang > 3 karakter)
-            words = [w.strip() for w in clean_nama.split() if len(w.strip()) > 3]
-            for w in words:
-                loc_w = page.get_by_text(w, exact=False)
-                if loc_w.count() > 0 and loc_w.first.is_visible():
-                    usaha_target = loc_w.first
+
+        # Strategi A: Cari di sidebar dengan title mengandung nama_tanpa_kurung
+        if nama_tanpa_kurung:
+            loc = page.locator(f'.fasih-form-sidebar div[title*="{nama_tanpa_kurung}" i], div[role="button"][title*="{nama_tanpa_kurung}" i]').first
+            if loc.count() > 0 and loc.is_visible():
+                usaha_target = loc
+
+        # Strategi B: Cari di sidebar dengan title nama lengkap
+        if not usaha_target:
+            loc = page.locator(f'.fasih-form-sidebar div[title*="{nama_usaha}" i]').first
+            if loc.count() > 0 and loc.is_visible():
+                usaha_target = loc
+
+        # Strategi C: Cari di sidebar dengan nama pemilik (mis. CATUR SETIWAN)
+        if not usaha_target and owner_name:
+            loc = page.locator(f'.fasih-form-sidebar div[title*="{owner_name}" i]').first
+            if loc.count() > 0 and loc.is_visible():
+                usaha_target = loc
+
+        # Strategi D: Gunakan kata kunci unik (abaikan stopwords umum seperti USAHA, TOKO, WARUNG, UTP, dsb.)
+        if not usaha_target:
+            stopwords = {"USAHA", "TOKO", "WARUNG", "PERTANIAN", "PERKEBUNAN", "PETERNAKAN", "PERTENAKAN", "UTP", "TANI", "KETERANGAN", "PERUSAHAAN"}
+            words = [w.strip() for w in re.sub(r'[\<\>\(\)\[\]]', ' ', nama_usaha).split() if len(w.strip()) >= 4]
+            unique_words = [w for w in words if w.upper() not in stopwords]
+            search_words = unique_words if unique_words else words
+            search_words.sort(key=len, reverse=True)
+
+            for w in search_words:
+                loc_w = page.locator(f'.fasih-form-sidebar div[title*="{w}" i]:not([title^="SE2026"]):not([title*="Keterangan Usaha/Perusahaan"])').first
+                if loc_w.count() > 0 and loc_w.is_visible():
+                    usaha_target = loc_w
                     break
 
         if usaha_target:
-            print(f"[FASIH] Memilih usaha: {nama_usaha}")
+            txt_target = usaha_target.get_attribute("title") or usaha_target.inner_text()
+            print(f"[FASIH] Memilih item usaha di Blok II: '{txt_target.strip()}'")
             usaha_target.click()
             time.sleep(2)
         else:
-            # Jika nama spesifik tidak ditemukan, klik item/card usaha pertama di Blok II
-            card_usaha = page.locator('div[role="button"]:has-text("KBLI"), tr:has-text("KBLI"), div:has-text("13. a. Nama Komersial")')
-            if card_usaha.count() > 0 and card_usaha.first.is_visible():
-                print("[FASIH] Memilih item usaha pertama di Blok II...")
-                card_usaha.first.click()
+            # Fallback: Klik item usaha pertama di daftar usaha Blok II (bukan header menu)
+            item_pertama = page.locator('.fasih-form-sidebar div[title]:not([title^="SE2026"]):not([title*="Keterangan Usaha"]):not([title*="KETERANGAN"])').first
+            if item_pertama.count() > 0 and item_pertama.is_visible():
+                txt_p = item_pertama.get_attribute("title") or ""
+                print(f"[FASIH] Memilih item usaha pertama di sidebar Blok II: '{txt_p.strip()}'...")
+                item_pertama.click()
                 time.sleep(2)
+            else:
+                card_usaha = page.locator('div[role="button"]:has-text("KBLI"), tr:has-text("KBLI"), div:has-text("13. a. Nama Komersial")').first
+                if card_usaha.count() > 0 and card_usaha.first.is_visible():
+                    print("[FASIH] Memilih item card usaha pertama di konten Blok II...")
+                    card_usaha.click()
+                    time.sleep(2)
+
+
+    # Tunggu render kuesioner usaha selesai dimuat
+    for _ in range(12):
+        try:
+            if page.locator("[id^='nilai_pendapatan_bln#']:visible, [id^='biaya_produksi_bln#']:visible, [id^='kategori#']:visible").count() > 0:
+                break
+            if page.locator('div:has-text("31. a"), div:has-text("27. a")').count() > 0:
+                break
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    # Deteksi idx usaha aktif dari container yang visible (misal #1, #2, #1001)
+    idx = 1
+    try:
+        vis_cont = page.locator("[id^='nilai_pendapatan_bln#']:visible, [id^='biaya_produksi_bln#']:visible, [id^='kategori#']:visible").first
+        if vis_cont.count() > 0:
+            c_id = vis_cont.get_attribute("id") or ""
+            m_idx = re.search(r'#(\d+)', c_id)
+            if m_idx:
+                idx = int(m_idx.group(1))
+    except Exception:
+        pass
+    print(f"[FASIH] Indeks usaha aktif di Blok II terdeteksi: #{idx}")
+    return True, idx
+
+def deteksi_blok(page, timeout=8) -> str:
+    """
+    Mendeteksi jenis blok di Blok II FASIH (Tugas 1):
+    - 'usaha_2026': terdapat container id nilai_pendapatan_bln#N atau biaya_produksi_bln#N (isian 30/31)
+    - 'biasa': terdapat isian 27/28
+    - 'unknown': tidak dapat dideteksi setelah batas timeout
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            # Usaha beroperasi 2026 (isian 30/31)
+            if page.locator("[id^='nilai_pendapatan_bln#'], [id^='biaya_produksi_bln#']").count() > 0:
+                return "usaha_2026"
+            if page.locator('div:has-text("31. a"), div:has-text("31.a")').count() > 0:
+                return "usaha_2026"
+                
+            # Usaha biasa (isian 26/27/28)
+            if page.locator('div:has-text("27. a"), div:has-text("27.a"), div:has-text("26. a")').count() > 0:
+                return "biasa"
+        except Exception:
+            pass
+        time.sleep(0.5)
+
+    return "unknown"
+
+
+
+def baca_nilai_fasih(page, blok, idx=1) -> dict:
+    """
+    Membaca nilai dari isian FASIH berdasarkan nomor pertanyaan / ID container (PRD §5 FR-3 & Tugas 1).
+    Mengembalikan dict:
+    {
+        'ok': bool,
+        'pbj': float,
+        'prod': float,
+        'ops': float,
+        'beli': float,
+        'bulan_beroperasi': int,     # Khusus usaha 2026 (isian 31.e)
+        'kategori': str,             # Dari isian 13.h
+        'kbli': str,                 # Dari isian 13.g
+        'error': str,
+        'field_locators': dict       # Locator input untuk tiap field
+    }
+    Jika ada field wajib yang tidak terbaca -> ok = False, error diset.
+    """
+    res = {
+        'ok': True,
+        'pbj': 0.0,
+        'prod': 0.0,
+        'ops': 0.0,
+        'beli': 0.0,
+        'bulan_beroperasi': 1,
+        'kategori': '',
+        'kbli': '',
+        'error': '',
+        'field_locators': {}
+    }
+
+    def _clean_num(val_str):
+        if not val_str:
+            return 0.0
+        c = re.sub(r'[^\d]', '', str(val_str).strip())
+        return float(c) if c else 0.0
+
+    # 1. Baca Kategori (13.h) dan KBLI (13.g)
+    try:
+        kat_loc = page.locator(f'[id="kategori#{idx}"], div:has-text("13. h. Kategori")').last
+        if kat_loc.count() > 0:
+            inp_kat = kat_loc.locator('input')
+            if inp_kat.count() > 0:
+                res['kategori'] = inp_kat.first.input_value().strip().upper()
+            if not res['kategori']:
+                txt = kat_loc.inner_text().upper()
+                m_kat = re.search(r'KATEGORI\s*:?\s*([A-U])\b', txt)
+                if m_kat:
+                    res['kategori'] = m_kat.group(1)
+
+        kbli_loc = page.locator(f'[id="kbli_genai#{idx}"], [id="kbli#{idx}"], div:has-text("13. g. Kode KBLI")').last
+        if kbli_loc.count() > 0:
+            checked_radio = kbli_loc.locator('input[type="radio"]:checked')
+            if checked_radio.count() > 0:
+                res['kbli'] = checked_radio.first.get_attribute('value') or ''
+            if not res['kbli']:
+                txt_kbli = kbli_loc.inner_text()
+                m_kbli = re.search(r'\b(\d{5})\b', txt_kbli)
+                if m_kbli:
+                    res['kbli'] = m_kbli.group(1)
+    except Exception as e:
+        print(f"[WARN] Error membaca KBLI/Kategori: {e}")
+
+    # 2. Baca angka berdasarkan jenis blok
+    if blok == "usaha_2026":
+        # Container ID spesifik dari blok_ii_opened.html (Tugas 1)
+        # 31.a = nilai_pendapatan_bln#N
+        # 30.b = biaya_produksi_bln#N
+        # 30.d = operasional_bln#N
+        # 30.c = biaya_pembelian_bln#N (Kategori G / barang dagangan)
+        # 31.e = bln_operasi#N
+        c_pbj = page.locator(f'[id="nilai_pendapatan_bln#{idx}"]')
+        c_prod = page.locator(f'[id="biaya_produksi_bln#{idx}"]')
+        c_ops = page.locator(f'[id="operasional_bln#{idx}"]')
+        c_beli = page.locator(f'[id="biaya_pembelian_bln#{idx}"]')
+        c_bln = page.locator(f'[id="bln_operasi#{idx}"]')
+
+        if c_pbj.count() == 0:
+            res['ok'] = False
+            res['error'] = f"Container 31.a [id='nilai_pendapatan_bln#{idx}'] tidak ditemukan"
+            return res
+
+        if c_prod.count() == 0:
+            res['ok'] = False
+            res['error'] = f"Container 30.b [id='biaya_produksi_bln#{idx}'] tidak ditemukan"
+            return res
+
+        if c_ops.count() == 0:
+            res['ok'] = False
+            res['error'] = f"Container 30.d [id='operasional_bln#{idx}'] tidak ditemukan"
+            return res
+
+        try:
+            inp_pbj = c_pbj.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+            inp_prod = c_prod.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+            inp_ops = c_ops.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+
+            res['pbj'] = _clean_num(inp_pbj.input_value())
+            res['prod'] = _clean_num(inp_prod.input_value())
+            res['ops'] = _clean_num(inp_ops.input_value())
+
+            res['field_locators']['pbj'] = inp_pbj
+            res['field_locators']['prod'] = inp_prod
+            res['field_locators']['ops'] = inp_ops
+
+            # Field 30.c (pembelian barang untuk dijual):
+            if c_beli.count() > 0:
+                inp_beli = c_beli.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+                if inp_beli.count() > 0:
+                    res['beli'] = _clean_num(inp_beli.input_value())
+                    res['field_locators']['beli'] = inp_beli
+            else:
+                # TODO: Field 30.c (pembelian barang yang dijual, Kategori G) belum ada dumpnya.
+                # Jika kategori adalah G tetapi 30.c tidak ada di DOM, tandai untuk verifikasi dump HTML.
+                if res['kategori'] == 'G':
+                    print("[TODO] Field 30.c (pembelian barang dagangan) Kategori G belum ada dump HTML-nya.")
+
+            # Baca bulan beroperasi (31.e - Tugas 7)
+            if c_bln.count() > 0:
+                cbs = c_bln.locator('input[type="checkbox"]').all()
+                checked_count = sum(1 for cb in cbs if cb.is_checked())
+                res['bulan_beroperasi'] = max(1, checked_count)
+            else:
+                res['bulan_beroperasi'] = 1
+
+            # Baca Nilai Aset Tanah dan Bangunan (32.a)
+            c_tanah = page.locator(f'[id="aset_tanah_bln#{idx}"]')
+            if c_tanah.count() > 0:
+                inp_tanah = c_tanah.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+                if inp_tanah.count() > 0:
+                    res['aset_tanah'] = _clean_num(inp_tanah.input_value())
+                    res['field_locators']['aset_tanah'] = inp_tanah
+            else:
+                res['aset_tanah'] = 0.0
+
+        except Exception as e:
+            res['ok'] = False
+            res['error'] = f"Gagal membaca input nilai usaha 2026: {e}"
+            return res
+
+
+    elif blok == "biasa":
+        # TODO: Blok usaha biasa (isian 27/28) belum ada dump HTML-nya. Minta dump lewat dump_fasih_html.py.
+        # Fallback sementara menggunakan label pencarian yang ada di kode:
+        try:
+            loc_pbj = page.locator('div:has-text("27. a"), div:has-text("27.a"), div:has-text("barang dan jasa")').last
+            loc_prod = page.locator('div:has-text("Biaya produksi")').last
+            loc_ops = page.locator('div:has-text("Biaya operasional")').last
+
+            if loc_pbj.count() > 0:
+                inp_pbj = loc_pbj.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+                res['pbj'] = _clean_num(inp_pbj.input_value())
+                res['field_locators']['pbj'] = inp_pbj
+            else:
+                res['ok'] = False
+                res['error'] = "TODO: Field 27.a usaha biasa tidak ditemukan (membutuhkan dump HTML)"
+                return res
+
+            if loc_prod.count() > 0:
+                inp_prod = loc_prod.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+                res['prod'] = _clean_num(inp_prod.input_value())
+                res['field_locators']['prod'] = inp_prod
+
+            if loc_ops.count() > 0:
+                inp_ops = loc_ops.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+                res['ops'] = _clean_num(inp_ops.input_value())
+                res['field_locators']['ops'] = inp_ops
+
+            res['bulan_beroperasi'] = 12
+        except Exception as e:
+            res['ok'] = False
+            res['error'] = f"Gagal membaca input nilai usaha biasa: {e}"
+            return res
+    else:
+        res['ok'] = False
+        res['error'] = f"Blok '{blok}' tidak dikenali. Memerlukan dump HTML."
+        return res
+
+    return res
 
 def cek_kbli_kategori(page, kategori_target="G"):
     """
@@ -731,59 +1029,51 @@ def cek_kbli_kategori(page, kategori_target="G"):
             if any(txt_kbli.startswith(prefix) for prefix in ["45", "46", "47"]):
                 return True
 
-    return True
+    # B1 fix: Jika kategori tidak terbaca atau tidak cocok, kembalikan False
+    return False
 
-def cari_dan_isi_field(page, keyword_label, nilai_baru):
-    """Mencari container pertanyaan berdasarkan teks label dan mengisi input di dalamnya."""
-    containers = page.locator(f'div:has-text("{keyword_label}")')
-    target_input = None
-    target_container = None
-    
-    count = containers.count()
-    for i in range(count - 1, -1, -1):
-        c = containers.nth(i)
-        inp = c.locator('input[type="text"], input:not([type="radio"]):not([type="checkbox"])')
-        if inp.count() > 0:
-            for j in range(inp.count()):
-                single_inp = inp.nth(j)
-                if single_inp.is_visible() and not single_inp.is_disabled():
-                    target_input = single_inp
-                    target_container = c
-                    break
-        if target_input:
-            break
+def isi_field_dengan_readback(page, input_locator, nilai_baru, nilai_lama=None):
+    """
+    Mengisi field input dan memverifikasi dengan membaca ulang (Guardrail G9 & Tugas 3):
+    1. Klik input, select all, ketik nilai_baru
+    2. Baca ulang input_value()
+    3. Jika sama persis -> return True, clean_readback
+    4. Jika beda -> ketik ulang nilai_lama (jika ada), return False, clean_readback
+    """
+    try:
+        input_locator.scroll_into_view_if_needed()
+        time.sleep(0.3)
+        target_str = str(int(nilai_baru))
 
-    # Jika input belum ditemukan atau masih ter-disable, ambil input pertama yang terlihat
-    if not target_input:
-        for i in range(count - 1, -1, -1):
-            c = containers.nth(i)
-            inp = c.locator('input')
-            if inp.count() > 0 and inp.first.is_visible():
-                target_input = inp.first
-                target_container = c
-                break
+        input_locator.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Backspace")
+        time.sleep(0.2)
+        page.keyboard.type(target_str, delay=random.randint(40, 90))
+        time.sleep(0.5)
 
-    if not target_input:
-        print(f"[ERROR] Tidak dapat menemukan field input untuk: {keyword_label}")
-        return False, None
+        # Readback (G9)
+        raw_readback = input_locator.input_value()
+        clean_readback = re.sub(r'[^\d]', '', raw_readback.strip())
 
-    target_input.scroll_into_view_if_needed()
-    time.sleep(0.5)
-
-    nilai_lama = target_input.input_value()
-    nilai_str = str(int(nilai_baru))
-    
-    target_input.click()
-    page.keyboard.press("Control+A")
-    page.keyboard.press("Backspace")
-    time.sleep(0.2)
-    page.keyboard.type(nilai_str, delay=random.randint(60, 140))
-    time.sleep(0.5)
-
-    nilai_terisi = target_input.input_value()
-    print(f"  -> [{keyword_label}] Lama: {nilai_lama} -> Baru: {nilai_terisi} (Target: {nilai_str})")
-    
-    return True, target_container
+        if clean_readback == target_str:
+            print(f"  [READBACK-OK] Nilai terisi cocok: {clean_readback} == target {target_str}")
+            return True, clean_readback
+        else:
+            print(f"  [READBACK-MISMATCH] Nilai terbaca: '{clean_readback}' != target '{target_str}'!")
+            if nilai_lama is not None:
+                old_str = str(int(nilai_lama))
+                print(f"  [READBACK-RESTORE] Mengembalikan nilai lama: {old_str}")
+                input_locator.click()
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace")
+                time.sleep(0.2)
+                page.keyboard.type(old_str, delay=random.randint(40, 90))
+                time.sleep(0.5)
+            return False, clean_readback
+    except Exception as e:
+        print(f"  [READBACK-ERROR] Gagal isi & readback: {e}")
+        return False, str(e)
 
 def cari_container_isian_27a(page):
     """
@@ -791,30 +1081,35 @@ def cari_container_isian_27a(page):
     yaitu 'Nilai produksi/pendapatan/penjualan barang dan jasa'.
     Di sinilah remark #DC_01 WAJIB diletakkan sesuai instruksi reviewer.
     """
-    keywords = ["27. a", "27.a", "27 a", "31. a", "31.a", "barang dan jasa"]
+    keywords = ["31. a", "31.a", "27. a", "27.a", "barang dan jasa"]
     for kw in keywords:
         containers = page.locator(f'div:has-text("{kw}")')
         count = containers.count()
         for i in range(count - 1, -1, -1):
             c = containers.nth(i)
-            btn_cat = c.locator('button[title="Catatan"], button[aria-label="Catatan"]')
-            if btn_cat.count() > 0 and btn_cat.first.is_visible():
+            btn_cat = c.locator('button[title="Catatan"]:visible, button[aria-label="Catatan"]:visible')
+            if btn_cat.count() > 0:
                 return c
             inp = c.locator('input[type="text"], input:not([type="radio"]):not([type="checkbox"])')
             if inp.count() > 0 and inp.first.is_visible():
                 return c
     return None
 
-def tambah_catatan_field(page, container, kode_catatan):
-    """Menambahkan catatan (#DC_01 dst) pada pertanyaan yang diubah dengan aman (non-blocking)."""
-    if not kode_catatan or not container:
-        return True
+def buka_dialog_catatan_pendapatan(page, container=None):
+    """
+    Membuka modal dialog Catatan pada isian pendapatan (27.a atau 31.a).
+    Mencari tombol Catatan yang visible di layar (desktop / mobile).
+    Mengembalikan locator dialog jika berhasil terbuka, atau None jika gagal.
+    """
+    # 1. Cek apakah dialog sudah terbuka
+    existing_dialog = page.locator('div[role="dialog"]').last
+    if existing_dialog.count() > 0 and existing_dialog.is_visible():
+        return existing_dialog
 
-    print(f"[FASIH] Mencoba menambahkan catatan '{kode_catatan}'...")
-    try:
-        # Cari tombol catatan yang benar-benar visible
-        btn_catatan = None
-        all_btns = container.locator('button[title="Catatan"], button[aria-label="Catatan"]').all()
+    # 2. Cari tombol catatan visible di container jika diberikan
+    btn_catatan = None
+    if container:
+        all_btns = container.locator('button[title="Catatan"]:visible, button[aria-label="Catatan"]:visible').all()
         for b in all_btns:
             try:
                 if b.is_visible():
@@ -823,88 +1118,157 @@ def tambah_catatan_field(page, container, kode_catatan):
             except Exception:
                 pass
 
-        if not btn_catatan:
-            print("[INFO] Tombol Catatan yang visible tidak ditemukan di field ini (dilewati).")
-            return False
+    # 3. Fallback pencarian berbasis ancestor pertanyaan pendapatan via evaluate JS
+    if not btn_catatan:
+        try:
+            btn_handle = page.evaluate_handle(r"""() => {
+                const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+                let node;
+                let targetTextNode = null;
+                while (node = walker.nextNode()) {
+                    if (/^(31\.\s*a|27\.\s*a|.*barang dan jasa)/i.test(node.textContent.trim())) {
+                        targetTextNode = node;
+                        break;
+                    }
+                }
+                if (!targetTextNode) return null;
+                let parent = targetTextNode.parentElement;
+                for (let i = 0; i < 7; i++) {
+                    if (!parent) break;
+                    const btns = parent.querySelectorAll('button[title*="Catatan"], button[aria-label*="Catatan"]');
+                    for (const b of btns) {
+                        if (b.offsetParent !== null) return b;
+                    }
+                    parent = parent.parentElement;
+                }
+                return null;
+            }""")
+            if btn_handle and btn_handle.as_element():
+                btn_catatan = btn_handle.as_element()
+        except Exception:
+            pass
 
+    if not btn_catatan:
+        return None
+
+    try:
+        btn_catatan.scroll_into_view_if_needed()
+        time.sleep(0.3)
         btn_catatan.click(timeout=3000)
+    except Exception:
+        # Fallback klik langsung via JS jika terhalang backdrop/animasi
+        try:
+            page.evaluate("el => el.click()", btn_catatan)
+        except Exception:
+            pass
+
+    time.sleep(1.0)
+    dialog = page.locator('div[role="dialog"]').last
+    if dialog.count() > 0 and dialog.is_visible():
+        return dialog
+    return None
+
+def tambah_catatan_field(page, container, kode_catatan, max_retry=2):
+    """
+    Menambahkan catatan (#DC_01 dst) pada isian pendapatan dan MEMVERIFIKASI
+    bahwa catatan benar-benar tersimpan (PRD §7.3):
+    1. Buka dialog catatan
+    2. Ketik catatan pada textarea
+    3. KLIK TOMBOL SIMPAN spesifik: button[title="Simpan"] (bukan tombol Dismiss!)
+    4. Tunggu catatan masuk ke daftar
+    5. Verifikasi apakah teks kode_catatan sudah muncul di dalam dialog
+    6. Tutup modal dialog
+    Jika gagal verifikasi, ulangi maksimal max_retry kali.
+    """
+    if not kode_catatan:
+        return True
+
+    catatan_final = kode_catatan.strip()
+    print(f"[FASIH] Menambahkan catatan '{catatan_final}'...")
+
+    for percobaan in range(1, max_retry + 1):
+        dialog = buka_dialog_catatan_pendapatan(page, container)
+        if not dialog:
+            print(f"[WARN] Percobaan {percobaan}/{max_retry}: Modal catatan tidak terbuka.")
+            time.sleep(1)
+            continue
+
+        try:
+            # 1. Cek apakah catatan sudah ada sebelumnya di dialog
+            if catatan_final in dialog.inner_text():
+                print(f"[FASIH] Catatan '{catatan_final}' sudah terverifikasi ada di dialog.")
+                tutup_modal_dialog(page)
+                return True
+
+            # 2. Ketik catatan di textarea
+            ta = dialog.locator('textarea:visible').first
+            if ta.count() > 0:
+                ta.click()
+                page.keyboard.press("Control+A")
+                page.keyboard.press("Backspace")
+                page.keyboard.type(catatan_final, delay=random.randint(40, 80))
+                time.sleep(0.5)
+
+                # 3. KLIK TOMBOL SIMPAN
+                # PENTING: Cari button[title="Simpan"] spesifik (bukan Dismiss/Close!)
+                btn_simpan = dialog.locator('button[title="Simpan"]:visible').first
+                if btn_simpan.count() > 0:
+                    btn_simpan.click(timeout=3000)
+                    print(f"[FASIH] Tombol 'Simpan' berhasil diklik.")
+                else:
+                    # Fallback Enter jika tombol simpan tidak terjangkau
+                    page.keyboard.press("Enter")
+                    print(f"[FASIH] Menekan Enter untuk menyimpan catatan.")
+
+                time.sleep(1.5)
+
+                # 4. Verifikasi bahwa catatan telah masuk ke list komentar
+                dialog_text = dialog.inner_text()
+                if catatan_final in dialog_text:
+                    print(f"[FASIH] Catatan '{catatan_final}' BERHASIL TERVERIFIKASI tersimpan di FASIH!")
+                    tutup_modal_dialog(page)
+                    return True
+                else:
+                    print(f"[WARN] Percobaan {percobaan}/{max_retry}: Catatan '{catatan_final}' belum muncul setelah klik simpan.")
+            else:
+                print(f"[WARN] Textarea catatan tidak ditemukan di dialog.")
+
+        except Exception as e:
+            print(f"[WARN] Error saat mengisi catatan (percobaan {percobaan}): {e}")
+
+        tutup_modal_dialog(page)
         time.sleep(1)
 
-        dialog = page.locator('div[role="dialog"]').last
-        if dialog.count() == 0 or not dialog.is_visible():
-            print("[INFO] Modal catatan tidak terbuka (dilewati).")
-            return False
-
-        textarea = dialog.locator('textarea')
-        if textarea.count() > 0 and textarea.first.is_visible():
-            textarea.first.click()
-            page.keyboard.press("Control+A")
-            page.keyboard.press("Backspace")
-            page.keyboard.type(kode_catatan, delay=random.randint(60, 140))
-            time.sleep(0.5)
-            
-            # Cari tombol kirim (ikon pesawat / svg di samping textarea) atau tekan Enter
-            btn_send = dialog.locator('button:has(svg), button[title*="Kirim"], button:has-text("Kirim"), button:has-text("Simpan")').last
-            if btn_send.count() > 0 and btn_send.is_visible():
-                btn_send.click(timeout=3000)
-            else:
-                page.keyboard.press("Enter")
-            time.sleep(1)
-            print(f"[FASIH] Catatan '{kode_catatan}' tersimpan.")
-                
-            tutup_modal_dialog(page)
-            time.sleep(0.5)
-            return True
-    except Exception as e:
-        print(f"[INFO] Catatan dilewati karena kendala UI: {e}")
-        tutup_modal_dialog(page)
-        return False
-
+    print(f"[ERROR] Gagal menyimpan dan memverifikasi catatan '{catatan_final}' setelah {max_retry} percobaan.")
     return False
 
 def tutup_modal_dialog(page):
     """
-    Menutup modal dialog (seperti modal Catatan) dengan aman dan tuntas:
-    1. Mencari tombol close di header bagian atas-kanan dialog (menghindari tombol kirim di bawah).
-    2. Menekan tombol Escape.
-    3. Mengklik backdrop luar jika masih terbuka.
+    Menutup modal dialog Catatan dengan aman dan tuntas:
+    1. Klik tombol Dismiss spesifik (X di sudut kanan atas modal dialog).
+    2. Tekan tombol Escape.
+    3. Klik backdrop jika masih terbuka.
     """
     try:
         dialog = page.locator('div[role="dialog"]').last
         if dialog.count() == 0 or not dialog.is_visible():
             return True
 
-        # 1. Coba klik tombol close spesifik di header (bukan tombol send)
-        btn_close = dialog.locator('button:has-text("✕"), button:has-text("×"), button[aria-label*="close" i], button.btn-close').first
-        if btn_close.count() > 0 and btn_close.is_visible():
+        # 1. Klik tombol dismiss spesifik (X di sudut kanan atas)
+        btn_dismiss = dialog.locator('button[aria-label="Dismiss"]:visible, button:has-text("Close"):visible').first
+        if btn_dismiss.count() > 0:
             try:
-                btn_close.click(timeout=1500)
+                btn_dismiss.click(timeout=1500)
             except Exception:
                 pass
 
         time.sleep(0.3)
-        # 2. Cari tombol di kuadran kanan atas modal (header) berdasarkan koordinat
-        if dialog.count() > 0 and dialog.is_visible():
-            dialog_box = dialog.bounding_box()
-            if dialog_box:
-                top_limit = dialog_box['y'] + 80
-                right_limit = dialog_box['x'] + (dialog_box['width'] * 0.6)
-                for btn in dialog.locator('button').all():
-                    try:
-                        bbox = btn.bounding_box()
-                        if bbox and bbox['y'] < top_limit and bbox['x'] > right_limit:
-                            btn.click(timeout=1500)
-                            break
-                    except Exception:
-                        pass
-
-        time.sleep(0.3)
-        # 3. Tekan Escape
+        # 2. Tekan Escape
         if dialog.count() > 0 and dialog.is_visible():
             page.keyboard.press("Escape")
 
         time.sleep(0.3)
-        # 4. Klik backdrop di luar modal jika masih membandel
+        # 3. Klik backdrop di luar modal jika masih membandel
         if dialog.count() > 0 and dialog.is_visible():
             page.mouse.click(20, 20)
 
@@ -919,52 +1283,16 @@ def tutup_modal_dialog(page):
 
 def cek_catatan_eksisting_27a(page, container=None):
     """
-    Memeriksa apakah pada Isian 27a sudah terdapat riwayat catatan '#DC' / 'DC'.
+    Memeriksa apakah pada Isian 27a / 31a sudah terdapat riwayat catatan '#DC' / 'DC'.
     Jika sudah ada, mengembalikan (True, isi_catatan) agar assignment dilewati
     dan tidak diedit ganda / bentrok antar 2 komputer.
     Jika kosong / tidak ada DC, modal PASTI ditutup kembali sebelum bot lanjut bekerja.
     """
-    if not container:
-        container = cari_container_isian_27a(page)
-    if not container:
+    dialog = buka_dialog_catatan_pendapatan(page, container)
+    if not dialog:
         return False, ""
 
     try:
-        container.scroll_into_view_if_needed()
-        time.sleep(0.3)
-
-        btn_catatan = None
-        all_btns = container.locator('button[title="Catatan"], button[aria-label="Catatan"], button:has-text("Catatan")').all()
-        for b in all_btns:
-            try:
-                if b.is_visible():
-                    btn_catatan = b
-                    break
-            except Exception:
-                pass
-
-        if not btn_catatan:
-            # Cari tombol dengan ikon komentar
-            for b in container.locator('button').all():
-                try:
-                    if b.is_visible() and ("catatan" in (b.get_attribute("title") or "").lower() or "comment" in (b.get_attribute("class") or "").lower()):
-                        btn_catatan = b
-                        break
-                except Exception:
-                    pass
-
-        if not btn_catatan:
-            return False, ""
-
-        btn_catatan.scroll_into_view_if_needed()
-        time.sleep(0.3)
-        btn_catatan.click(timeout=3000)
-        time.sleep(0.8)
-
-        dialog = page.locator('div[role="dialog"]').last
-        if dialog.count() == 0 or not dialog.is_visible():
-            return False, ""
-
         # KUNCI UTAMA: Baca seluruh teks di dalam modal dialog!
         # Riwayat chat catatan tersimpan di bubble teks dialog.
         dialog_text = dialog.inner_text().strip()
@@ -981,7 +1309,7 @@ def cek_catatan_eksisting_27a(page, container=None):
 
         return False, ""
     except Exception as e:
-        print(f"[INFO] Pengecekan catatan eksisting 27a: {e}")
+        print(f"[INFO] Pengecekan catatan eksisting: {e}")
         tutup_modal_dialog(page)
         return False, ""
 
@@ -1233,13 +1561,14 @@ def handle_waf_block(page, row, bot_code):
     """
     Menangani situasi ketika WAF BPS memblokir koneksi:
     a. Simpan screenshot + catat kode BOT ke tabel audit log
-    b. Set status baris KEMBALI ke 'APPROVED' (bukan FAILED/FASIH_FORBIDDEN)
+    b. Set status baris KEMBALI ke status sebelumnya (bukan APPROVED) - Tugas 5
     c. Simpan timestamp blokir ke .waf_lock
     d. Cetak pesan jelas dengan saran cooldown 30 menit
     """
     aid = row['assignment_id']
     nama = row['nama_usaha']
     bot_code = bot_code or "BOT-DETECTED"
+    prev_status = row.get('status') or 'PENDING'
     conn = get_connection()
     try:
         ss_waf = os.path.join(SCREENSHOTS_DIR, f"WAF_BLOCK_{aid}_{bot_code}_{int(time.time())}.png")
@@ -1248,11 +1577,11 @@ def handle_waf_block(page, row, bot_code):
         except Exception:
             pass
         
-        log_audit(aid, nama, "WAF_BOT_BLOCK", status_sebelumnya="APPROVED", status_baru="APPROVED", 
+        log_audit(aid, nama, "WAF_BOT_BLOCK", status_sebelumnya=prev_status, status_baru=prev_status, 
                   pesan=f"WAF bot detected: {bot_code}. Screenshot: {ss_waf}")
         
-        # Status dikembalikan ke APPROVED agar bisa dieksekusi lagi nanti
-        conn.execute("UPDATE kasus_nerwana SET status = 'APPROVED', alasan_review = NULL WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
+        # Status dikembalikan ke status sebelumnya (bukan APPROVED)
+        conn.execute("UPDATE kasus_nerwana SET status = ?, alasan_review = NULL WHERE assignment_id = ? AND nama_usaha = ?", (prev_status, aid, nama))
         conn.commit()
 
         catat_waf_block(bot_code)
@@ -1263,7 +1592,7 @@ def handle_waf_block(page, row, bot_code):
         print(f"Kode BOT       : {bot_code}")
         print(f"Jam Kejadian   : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         print(f"Assignment     : {aid} ({nama})")
-        print("Status Baris   : Dikembalikan ke 'APPROVED' (bukan kesalahan data)")
+        print(f"Status Baris   : Dikembalikan ke '{prev_status}' (bukan kesalahan data)")
         print(f"Bukti Gambar   : {ss_waf}")
         print("TINDAKAN       : Menghentikan seluruh batch eksekusi segera!")
         print("SARAN          : Tunggu cooldown minimal 30 menit sebelum jalankan lagi.")
@@ -1273,25 +1602,37 @@ def handle_waf_block(page, row, bot_code):
     return "WAF_BLOCK", bot_code
 
 def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False, nerwana_updater=None, target_info=None, kategori="G"):
+    """
+    Menjalankan alur eksekusi baris kuesioner FASIH secara end-to-end:
+    1. Buka Blok II & deteksi indeks usaha aktif (#N).
+    2. Deteksi jenis blok ('usaha_2026' vs 'biasa').
+    3. Cek catatan eksisting (#DC) pada pendapatan agar tidak terjadi tabrakan/edit ganda.
+    4. Baca nilai isian langsung dari FASIH (bukan dari DB/Excel lama).
+    5. Evaluasi usulan murni dengan evaluasi() (Guardrail G1-G8).
+    6. Jika SKIP atau NEED_REVIEW -> tutup tab FASIH, kembalikan status Selancar, simpan status & alasan di DB.
+    7. Jika APPLY:
+       - Isi tepat satu field target dengan readback (G9).
+       - Jika mismatch -> simpan READBACK_MISMATCH, kembalikan status Selancar.
+       - Tambah remark terverifikasi pada Isian Pendapatan (27a/31a). Jika gagal -> REMARK_FAILED.
+       - Selesaikan anomali di halaman Catatan.
+       - Jika dry-run -> simpan APPLIED, kembalikan status Selancar ke semula.
+       - Jika live submit -> submit FASIH, update Selancar 'sudah_direvisi', simpan COMPLETED.
+         Jika update Selancar gagal -> simpan SYNC_FAILED & hentikan batch.
+    """
     aid = row['assignment_id']
     nama = row['nama_usaha']
-    
-    pbj_baru = row['nilai_baru_pbj']
-    prod_baru = row['nilai_baru_prod']
-    ops_baru = row['nilai_baru_ops']
-    kode_catatan = row['kode_catatan'] or "#DC_01"
+    kode_catatan = row.get('kode_catatan') or "#DC_01"
     
     print("\n" + "=" * 65)
-    print(f"EKSEKUSI ASSIGNMENT: {aid} (KATEGORI {kategori})")
+    print(f"EKSEKUSI ASSIGNMENT: {aid} (TARGET KATEGORI {kategori})")
     print(f"Nama Usaha  : {nama}")
-    print(f"PBJ Baru    : {pbj_baru:,.0f} (Lama: {row['pbj']:,.0f})")
-    print(f"Prod Baru   : {prod_baru:,.0f} (Lama: {row['prod']:,.0f})")
-    print(f"Ops Baru    : {ops_baru:,.0f} (Lama: {row['ops']:,.0f})")
     print(f"Catatan     : {kode_catatan if isi_catatan else '(dilewati saat testing)'}")
     print(f"Mode        : {'DRY-RUN (TIDAK SUBMIT)' if dry_run else 'SUBMIT SUNGGUHAN'}")
     print("=" * 65)
 
     conn = get_connection()
+    from updater_nerwana import set_tindak_lanjut_selancar
+
     try:
         # 0. Cek awal WAF bot
         is_waf, bot_code = cek_waf_bot(page)
@@ -1314,7 +1655,8 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             print(f"[SKIP] Assignment '{aid}' ({nama}) menampilkan error FASIH biasa (Forbidden / 403). Dilewati!")
             conn.execute("UPDATE kasus_nerwana SET status = 'FASIH_FORBIDDEN', alasan_review = 'Forbidden / Error akses FASIH' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
             conn.commit()
-            log_audit(aid, nama, "FASIH_FORBIDDEN", status_sebelumnya="APPROVED", status_baru="FASIH_FORBIDDEN", pesan="Forbidden di FASIH")
+            log_audit(aid, nama, "FASIH_FORBIDDEN", status_sebelumnya="PENDING", status_baru="FASIH_FORBIDDEN", pesan="Forbidden di FASIH")
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
             return "SKIPPED_FASIH_ERROR", None
 
         # 2. Lakukan Revoke & Masuk Mode Edit (klik tombol pensil)
@@ -1325,89 +1667,190 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         if is_waf:
             return handle_waf_block(page, row, bot_code)
 
-        # JEDA SINGKAT 0.5 detik setelah revoke
         time.sleep(0.5)
 
-        # 3. Buka Blok II
-        buka_blok_ii(page, nama)
+        # 3. Buka Blok II & Deteksi indeks usaha aktif
+        ok_blok, idx_usaha = buka_blok_ii(page, nama)
+        if not ok_blok:
+            raise Exception("Gagal membuka Blok II di FASIH")
 
-        # 4. Validasi KBLI / Kategori (G atau A)
-        is_kat_cocok = cek_kbli_kategori(page, kategori_target=kategori)
-        if not is_kat_cocok:
-            print(f"[ABORT] KBLI/Kategori terdeteksi BUKAN Kategori {kategori}. Menghentikan baris ini.")
-            conn.execute("UPDATE kasus_nerwana SET status = 'KBLI_MISMATCH' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
-            conn.commit()
-            log_audit(aid, nama, "KBLI_CHECK", status_sebelumnya="APPROVED", status_baru="KBLI_MISMATCH", pesan=f"Kategori di FASIH bukan {kategori}")
-            return "KBLI_MISMATCH", None
+        # 4. Deteksi jenis Blok (Tugas 1)
+        blok_jenis = deteksi_blok(page)
+        print(f"[FASIH] Blok terdeteksi: '{blok_jenis}' (Indeks usaha #{idx_usaha})")
 
-        # 4.5 Anti-Tabrakan / Anti-Edit Ulang: Cek apakah Isian 27a sudah memiliki remark #DC
-        c_27a_cek = cari_container_isian_27a(page)
-        ada_dc, teks_dc = cek_catatan_eksisting_27a(page, c_27a_cek)
+        # 4.5 Anti-Tabrakan: Cek apakah Isian Pendapatan (27a/31a) sudah memiliki catatan #DC
+        c_pendapatan_cek = cari_container_isian_27a(page)
+        ada_dc, teks_dc = cek_catatan_eksisting_27a(page, c_pendapatan_cek)
         if ada_dc:
-            print(f"\n[FASIH-SKIP] Isian 27a SUDAH berisi catatan DC: '{teks_dc}'!")
+            print(f"\n[FASIH-SKIP] Isian Pendapatan SUDAH berisi catatan DC: '{teks_dc}'!")
             print("             Assignment ini sudah selesai diperbaiki sebelumnya.")
-            print("             Dilewati agar tidak terjadi penimpaan / edit ganda.")
             conn.execute("UPDATE kasus_nerwana SET status = 'COMPLETED', tindak_lanjut = 'sudah_direvisi', alasan_review = ? WHERE assignment_id = ? AND nama_usaha = ?", (f"Sudah ada remark: {teks_dc}", aid, nama))
             conn.commit()
-            log_audit(aid, nama, "ALREADY_HAS_DC_REMARK", status_sebelumnya="APPROVED", status_baru="COMPLETED", pesan=f"Isian 27a sudah berisi remark '{teks_dc}'")
+            log_audit(aid, nama, "ALREADY_HAS_DC_REMARK", status_sebelumnya="PENDING", status_baru="COMPLETED", pesan=f"Pendapatan sudah berisi remark '{teks_dc}'")
             return "ALREADY_COMPLETED", teks_dc
 
-        # Pastikan modal dialog 100% tertutup sebelum mulai mengisi field
+        # Pastikan modal dialog 100% tertutup sebelum membaca form
         tutup_modal_dialog(page)
 
-        # 5. Isi Nilai Baru (dengan event keyboard natural)
-        c_pbj_found = c_27a_cek
-        if prod_baru != row['prod']:
-            cari_dan_isi_field(page, "Biaya produksi", prod_baru)
+        # 5. Baca nilai langsung dari FASIH (Tugas 1 & Tugas 2)
+        data_fasih = baca_nilai_fasih(page, blok=blok_jenis, idx=idx_usaha)
+        if not data_fasih['ok']:
+            err_baca = data_fasih.get('error', 'Gagal membaca nilai di FASIH')
+            print(f"[FASIH-NEED_REVIEW] Field tidak terbaca lengkap: {err_baca}")
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = 'NEED_REVIEW', alasan_review = ?, alasan_skip = ?, blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (err_baca, err_baca, blok_jenis, datetime.now().isoformat(), aid, nama))
+            conn.commit()
+            log_audit(aid, nama, "NEED_REVIEW_BACA", status_sebelumnya="PENDING", status_baru="NEED_REVIEW", pesan=err_baca)
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+            return "NEED_REVIEW", err_baca
 
-        if ops_baru != row['ops']:
-            cari_dan_isi_field(page, "Biaya operasional", ops_baru)
+        # 6. Validasi KBLI / Kategori
+        kat_fasih = data_fasih.get('kategori') or kategori
+        kbli_fasih = data_fasih.get('kbli') or row.get('kbli', '')
+        
+        nilai_dict = {
+            'pbj': data_fasih['pbj'],
+            'prod': data_fasih['prod'],
+            'ops': data_fasih['ops'],
+            'beli': data_fasih.get('beli', 0.0),
+            'bulan_beroperasi': data_fasih.get('bulan_beroperasi', 1),
+            'aset_tanah': data_fasih.get('aset_tanah', 0.0)
+        }
+        
+        print(f"[FASIH DATA] Kategori: {kat_fasih} | KBLI: {kbli_fasih} | Bulan Beroperasi: {nilai_dict['bulan_beroperasi']}")
+        print(f"             PBJ : {nilai_dict['pbj']:,.0f}")
+        print(f"             Prod: {nilai_dict['prod']:,.0f}")
+        print(f"             Ops : {nilai_dict['ops']:,.0f}")
+        if nilai_dict['beli'] > 0:
+            print(f"             Beli: {nilai_dict['beli']:,.0f}")
+        if nilai_dict['aset_tanah'] > 0:
+            print(f"             Aset: {nilai_dict['aset_tanah']:,.0f} (Tanah & Bangunan 32.a)")
 
-        if pbj_baru != row['pbj']:
-            ok_pbj, c_pbj = cari_dan_isi_field(page, "barang dan jasa", pbj_baru)
-            if ok_pbj: c_pbj_found = c_pbj
+        # 7. Evaluasi Guardrail murni (Tugas 2)
+        rasio_selancar = None
+        if target_info:
+            rasio_selancar = target_info.get('rasio_selancar')
 
-        # JEDA SINGKAT 0.5 detik setelah isi nilai
+        hasil = evaluasi(
+            nilai=nilai_dict,
+            kategori=kat_fasih,
+            kbli=kbli_fasih,
+            blok=blok_jenis,
+            rasio_selancar=rasio_selancar
+        )
+
+        print(f"[EVALUASI] Aksi: {hasil.aksi} | Alasan: {hasil.alasan}")
+
+        # 8. Tangani Hasil Evaluasi:
+        if hasil.aksi in ["SKIP", "NEED_REVIEW"]:
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = ?, alasan_skip = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (hasil.aksi, hasil.alasan, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+            conn.commit()
+            log_audit(aid, nama, f"EVALUASI_{hasil.aksi}", status_sebelumnya="PENDING", status_baru=hasil.aksi, pesan=hasil.alasan)
+            # Kembalikan status Selancar ke status semula
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+            return hasil.aksi, hasil.alasan
+
+        # Skenario APPLY: Ubah TEPAT SATU field
+        faktor_txt = f" (Faktor: {hasil.faktor})" if hasil.faktor else f" ({hasil.operasi})"
+        print(f"[APPLY] Field target: '{hasil.field}' dari {hasil.nilai_lama:,.0f} -> {hasil.nilai_baru:,.0f}{faktor_txt}")
+
+        # 9. Mengisi Field dengan Readback (Tugas 3 / G9)
+        input_loc = data_fasih['field_locators'].get(hasil.field)
+        if not input_loc or input_loc.count() == 0:
+            # Fallback jika locator dari baca_nilai tidak valid
+            c_fallback = page.locator(f'[id*="{hasil.field}"]:visible, [id*="pendapatan"]:visible').first
+            if c_fallback.count() > 0:
+                input_loc = c_fallback.locator('input[type="text"]').first
+
+        if not input_loc or input_loc.count() == 0:
+            err_loc = f"Input locator untuk field '{hasil.field}' tidak ditemukan"
+            print(f"[NEED_REVIEW] {err_loc}")
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = 'NEED_REVIEW', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (err_loc, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+            conn.commit()
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+            return "NEED_REVIEW", err_loc
+
+        ok_rb, val_rb = isi_field_dengan_readback(page, input_loc, hasil.nilai_baru, nilai_lama=hasil.nilai_lama)
+        if not ok_rb:
+            err_rb = f"Readback mismatch pada {hasil.field}: terbaca '{val_rb}' != target '{hasil.nilai_baru:,.0f}'"
+            print(f"[READBACK_MISMATCH] {err_rb}")
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = 'READBACK_MISMATCH', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (err_rb, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+            conn.commit()
+            log_audit(aid, nama, "READBACK_MISMATCH", status_sebelumnya="PENDING", status_baru="READBACK_MISMATCH", pesan=err_rb)
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+            return "READBACK_MISMATCH", val_rb
+
         time.sleep(0.5)
 
-        # 6. Tambah Catatan jika diaktifkan (WAJIB DI ISIAN 27a)
+        # 10. Tambah Catatan / Remark (Tugas 5 & PRD §7.3)
+        c_pendapatan = c_pendapatan_cek or cari_container_isian_27a(page)
+        catatan_final = kode_catatan or "#DC_01"
+        remark_ok = False
         if isi_catatan:
-            catatan_final = kode_catatan or "#DC_01"
-            c_target_27a = c_pbj_found or cari_container_isian_27a(page)
-            if c_target_27a:
-                print(f"[FASIH] Menambahkan remark '{catatan_final}' pada Isian 27a (Nilai Produksi/PBJ)...")
-                tambah_catatan_field(page, c_target_27a, catatan_final)
-            else:
-                print(f"[WARN] Container Isian 27a tidak ditemukan untuk menambahkan catatan '{catatan_final}'.")
-        elif not isi_catatan:
-            print("[INFO] Pengisian catatan dilewati sesuai opsi testing (fokus isi form nilai).")
+            remark_ok = tambah_catatan_field(page, c_pendapatan, catatan_final)
+            if not remark_ok:
+                print(f"[FASIH-ABORT] Remark '{catatan_final}' GAGAL tersimpan. Mengembalikan nilai lama...")
+                # Kembalikan nilai lama di input agar form bersih
+                try:
+                    input_loc.click()
+                    page.keyboard.press("Control+A")
+                    page.keyboard.press("Backspace")
+                    page.keyboard.type(str(int(hasil.nilai_lama)))
+                except Exception:
+                    pass
+                conn.execute("""
+                    UPDATE kasus_nerwana 
+                    SET status = 'REMARK_FAILED', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                    WHERE assignment_id = ? AND nama_usaha = ?
+                """, (f"Remark '{catatan_final}' gagal tersimpan di FASIH", json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+                conn.commit()
+                log_audit(aid, nama, "REMARK_FAILED", status_sebelumnya="PENDING", status_baru="REMARK_FAILED", pesan=f"Remark '{catatan_final}' gagal")
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+                return "REMARK_FAILED", None
+        else:
+            remark_ok = True
 
-        # 7. Selesaikan di halaman Catatan: Tampilkan Anomali Usaha dan Keluarga
+        # 11. Halaman Catatan: Tampilkan Anomali
         proses_halaman_catatan_dan_tampilkan_anomali(page)
 
-        # 8. Konfirmasi Interaktif (jika diaktifkan)
+        # 12. Konfirmasi Interaktif (Tugas 4 / G12)
         if interaktif:
             print("\n" + "-" * 60)
-            print("[KONFIRMASI MANUAL] Form telah terisi di browser!")
+            print(f"[KONFIRMASI MANUAL] Usulan: Field '{hasil.field}' | {hasil.nilai_lama:,.0f} -> {hasil.nilai_baru:,.0f}")
             if dry_run:
-                print("PENTING: Ini mode DRY-RUN, tombol Kirim TIDAK akan ditekan!")
-                print("Silakan cek browser Chrome Anda untuk memastikan nilainya benar.")
+                print("Mode: DRY-RUN (Tombol Kirim TIDAK akan ditekan)")
                 jawab = input("Apakah nilai sudah sesuai dan ingin menyelesaikan dry-run? [y/n]: ").strip().lower()
                 if jawab != 'y':
                     print("[INFO] Dibatalkan oleh reviewer.")
+                    set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                     return "CANCELLED", None
             else:
-                print("PERHATIAN: Ini mode SUBMIT SUNGGUHAN!")
-                print("Tombol Kirim di FASIH akan ditekan & status di Selancar Nerwana akan diubah menjadi 'Sudah direvisi'!")
+                print("Mode: SUBMIT SUNGGUHAN (Akan kirim ke FASIH & update Selancar)")
                 jawab = input("Apakah Anda yakin ingin submit baris ini ke FASIH dan Selancar? [y/n]: ").strip().lower()
                 if jawab != 'y':
                     print("[INFO] Dibatalkan oleh reviewer.")
+                    set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                     return "CANCELLED", None
 
-        # JEDA SINGKAT 0.5 detik sebelum Kirim / Finalisasi
         time.sleep(0.5)
 
-        # 9. Submit atau Dry-run
+        # 13. Eksekusi Submit atau Dry-run (Tugas 5)
+        nilai_baru_dict = {hasil.field: hasil.nilai_baru}
         if dry_run:
             try:
                 ss_path = os.path.join(SCREENSHOTS_DIR, f"dryrun_{aid}_{int(time.time())}.png")
@@ -1417,12 +1860,18 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
                 pass
             print("[INFO] Sesuai mode dry-run, tombol Kirim TIDAK ditekan.")
             
-            conn.execute("UPDATE kasus_nerwana SET status = 'APPLIED' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = 'APPLIED', nilai_lama_fasih = ?, nilai_baru_fasih = ?, remark_terverifikasi = ?, blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (json.dumps(nilai_dict), json.dumps(nilai_baru_dict), 1 if remark_ok else 0, blok_jenis, datetime.now().isoformat(), aid, nama))
             conn.commit()
             log_audit(aid, nama, "DRY_RUN_APPLIED", 
-                      nilai_lama={'pbj': row['pbj'], 'prod': row['prod'], 'ops': row['ops']},
-                      nilai_baru={'pbj': pbj_baru, 'prod': prod_baru, 'ops': ops_baru},
-                      kode_catatan=kode_catatan, status_sebelumnya="APPROVED", status_baru="APPLIED")
+                      nilai_lama=nilai_dict,
+                      nilai_baru=nilai_baru_dict,
+                      kode_catatan=catatan_final, status_sebelumnya="PENDING", status_baru="APPLIED")
+            # Kembalikan status Selancar ke nilai semula agar tidak tertahan 'akan_direvisi'
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
             return "APPLIED", None
         else:
             submit_ok = submit_assignment(page)
@@ -1430,26 +1879,38 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
                 try:
                     ss_path = os.path.join(SCREENSHOTS_DIR, f"submitted_{aid}_{int(time.time())}.png")
                     page.screenshot(path=ss_path, timeout=5000)
-                except Exception as e_ss:
-                    print(f"[INFO] Melewati screenshot bukti (halaman sedang reload pasca submit): {e_ss}")
+                except Exception:
+                    pass
                 
-                conn.execute("UPDATE kasus_nerwana SET status = 'SUBMITTED' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
-                conn.commit()
-                log_audit(aid, nama, "SUBMIT_FASIH", 
-                      nilai_lama={'pbj': row['pbj'], 'prod': row['prod'], 'ops': row['ops']},
-                      nilai_baru={'pbj': pbj_baru, 'prod': prod_baru, 'ops': ops_baru},
-                      kode_catatan=kode_catatan, status_sebelumnya="APPROVED", status_baru="SUBMITTED")
+                # Update status di Selancar menjadi 'Sudah direvisi' (Tugas 5)
+                print("[SELANCAR] Mengupdate tindak lanjut di Selancar menjadi 'Sudah direvisi'...")
+                sync_ok = set_tindak_lanjut_selancar(target_info, nerwana_updater, status="sudah_direvisi")
+                if not sync_ok:
+                    print("\n[SYNC_FAILED] Update Selancar GAGAL setelah submit FASIH!")
+                    conn.execute("""
+                        UPDATE kasus_nerwana 
+                        SET status = 'SYNC_FAILED', alasan_review = 'Submit FASIH sukses tapi update Selancar gagal',
+                            nilai_lama_fasih = ?, nilai_baru_fasih = ?, remark_terverifikasi = 1, blok = ?, evaluasi_at = ?
+                        WHERE assignment_id = ? AND nama_usaha = ?
+                    """, (json.dumps(nilai_dict), json.dumps(nilai_baru_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+                    conn.commit()
+                    log_audit(aid, nama, "SYNC_FAILED", status_sebelumnya="PENDING", status_baru="SYNC_FAILED", pesan="Gagal update Selancar")
+                    return "SYNC_FAILED", "Gagal update Selancar"
 
-                # Otomatis Update Tindak Lanjut ke Selancar Nerwana menjadi 'sudah_direvisi'
-                from updater_nerwana import set_tindak_lanjut_selancar
-                print("[SELANCAR] Menyelesaikan tindak lanjut di tabel Selancar menjadi 'Sudah direvisi'...")
-                set_tindak_lanjut_selancar(target_info, nerwana_updater, status="sudah_direvisi")
-                conn.execute("UPDATE kasus_nerwana SET tindak_lanjut = 'sudah_direvisi', status = 'COMPLETED' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
+                # Submit FASIH + Update Selancar BERHASIL: tulis COMPLETED
+                conn.execute("""
+                    UPDATE kasus_nerwana 
+                    SET status = 'COMPLETED', tindak_lanjut = 'sudah_direvisi',
+                        nilai_lama_fasih = ?, nilai_baru_fasih = ?, remark_terverifikasi = 1, blok = ?, evaluasi_at = ?
+                    WHERE assignment_id = ? AND nama_usaha = ?
+                """, (json.dumps(nilai_dict), json.dumps(nilai_baru_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
                 conn.commit()
-
-                return "SUBMITTED", None
+                log_audit(aid, nama, "COMPLETED", 
+                          nilai_lama=nilai_dict,
+                          nilai_baru=nilai_baru_dict,
+                          kode_catatan=catatan_final, status_sebelumnya="PENDING", status_baru="COMPLETED")
+                return "COMPLETED", None
             else:
-                # Periksa apakah gagal karena WAF
                 is_waf, bot_code = cek_waf_bot(page)
                 if is_waf:
                     return handle_waf_block(page, row, bot_code)
@@ -1474,12 +1935,14 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             print(f"[SKIP] Assignment '{aid}' ({nama}) tidak dapat diakses di FASIH (Forbidden). Dilewati!")
             conn.execute("UPDATE kasus_nerwana SET status = 'FASIH_FORBIDDEN', alasan_review = ? WHERE assignment_id = ? AND nama_usaha = ?", (str(e), aid, nama))
             conn.commit()
-            log_audit(aid, nama, "FASIH_FORBIDDEN", status_sebelumnya="APPROVED", status_baru="FASIH_FORBIDDEN", pesan=str(e))
+            log_audit(aid, nama, "FASIH_FORBIDDEN", status_sebelumnya="PENDING", status_baru="FASIH_FORBIDDEN", pesan=str(e))
+            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
             return "SKIPPED_FASIH_ERROR", None
 
         conn.execute("UPDATE kasus_nerwana SET status = 'FAILED', alasan_review = ? WHERE assignment_id = ? AND nama_usaha = ?", (str(e), aid, nama))
         conn.commit()
-        log_audit(aid, nama, "EXECUTION_FAILED", status_sebelumnya="APPROVED", status_baru="FAILED", pesan=str(e))
+        log_audit(aid, nama, "EXECUTION_FAILED", status_sebelumnya="PENDING", status_baru="FAILED", pesan=str(e))
+        set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
         return "FAILED", None
     finally:
         conn.close()
@@ -1510,23 +1973,17 @@ def main():
     if not start_debug_chrome():
         return
 
-    try:
-        from sync_review import sync_excel_to_db
-        sync_excel_to_db()
-    except Exception as e_sync:
-        print(f"[INFO] Sinkronisasi Excel dilewati / opsional: {e_sync}")
+    # Tugas 6: Nonaktifkan sync_review sebagai sumber nilai
+    print("[INFO] Mode LIVE ON-THE-FLY aktif: Nilai dibaca langsung dari kuesioner FASIH.")
+    print("       File Excel lama dinonaktifkan sebagai sumber usulan eksekusi.")
 
     conn = get_connection()
-    approved_count = conn.execute("SELECT COUNT(*) FROM kasus_nerwana WHERE status = 'APPROVED'").fetchone()[0]
+    pending_count = conn.execute("SELECT COUNT(*) FROM kasus_nerwana WHERE status = 'PENDING'").fetchone()[0]
+    completed_count = conn.execute("SELECT COUNT(*) FROM kasus_nerwana WHERE status = 'COMPLETED'").fetchone()[0]
     conn.close()
 
-    print(f"\n[STATUS] Database lokal memiliki {approved_count} baris APPROVED tersimpan.")
-    if approved_count == 0:
-        print("[PERINGATAN] Belum ada data berstatus 'APPROVED' di database lokal!")
-        print("             Pastikan file 'review_usulan.xlsx' ada di folder bot dan")
-        print("             kolom 'Approved (Y/N)' sudah diisi 'Y' agar dapat dieksekusi.")
-    print("         Mode LIVE ON-THE-FLY aktif: Bot memeriksa langsung baris di tabel Selancar")
-    print("         secara urut di layar (tanpa scraping awal & tanpa lompat-lompat).")
+    print(f"\n[STATUS DATABASE] Antrean PENDING: {pending_count} | Selesai COMPLETED: {completed_count}")
+    print("         Bot memeriksa langsung baris di tabel Selancar secara urut di layar.")
 
     print("\nPilih Kategori Lapangan Usaha:")
     print("  [1] Kategori G - Perdagangan (Master Threshold KBLI 5/3/2/Kat) [Default]")
@@ -1580,7 +2037,7 @@ def main():
 
     tanya_catatan = True
     if pilihan in ["1", "3"]:
-        jawab_c = input("Sertakan penulisan catatan (#DC_01) pada isian 27.a? [y/n] (default y): ").strip().lower()
+        jawab_c = input("Sertakan penulisan catatan (#DC_01) pada isian 27.a / 31.a? [y/n] (default y): ").strip().lower()
         tanya_catatan = (jawab_c != "n")
     else:
         tanya_catatan = True
@@ -1595,7 +2052,8 @@ def main():
             buka_dan_siapkan_selancar, 
             cari_target_di_tabel_selancar, 
             lanjut_halaman_berikutnya_selancar,
-            refresh_selancar_realtime
+            refresh_selancar_realtime,
+            set_tindak_lanjut_selancar
         )
         nerwana_updater = NerwanaManager(context)
         selancar_page = nerwana_updater.get_or_create_page()
@@ -1609,8 +2067,9 @@ def main():
         di_skip = 0
         waf_terdeteksi = False
         waf_bot_code = ""
+        consecutive_errors = 0  # Stop-loss counter (G11)
+        total_submitted_count = 0  # Counter untuk konfirmasi awal (G12)
 
-        # Pakai ulang SATU tab FASIH (tidak buka tutup tab per assignment)
         fasih_page = None
         first_run = True
 
@@ -1646,13 +2105,11 @@ def main():
             print(f"[SELANCAR] Target ditemukan di tabel: '{nama}' (AID: {aid})")
 
             # 2.5 Ubah status di Selancar menjadi 'Akan direvisi' sebelum membuka tab FASIH
-            from updater_nerwana import set_tindak_lanjut_selancar
             print(f"[SELANCAR] Menandai assignment '{nama}' (AID: {aid}) menjadi 'Akan direvisi' sebelum membuka FASIH...")
             set_tindak_lanjut_selancar(target_info, nerwana_updater, status="akan_direvisi")
             time.sleep(0.8)
 
             # 3. Buka tab FASIH dari baris tabel di Selancar
-            # Bersihkan tab FASIH lama jika masih ada yang terbuka
             for pg in context.pages:
                 try:
                     if not pg.is_closed() and "fasih-sm.bps.go.id" in pg.url.lower():
@@ -1678,6 +2135,10 @@ def main():
                 print("[ERROR] Gagal membuka/menghubungkan tab FASIH. Mencoba baris berikutnya...")
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 gagal += 1
+                consecutive_errors += 1
+                if consecutive_errors >= MAX_ERR_BERTURUT:
+                    print(f"\n[CIRCUIT BREAKER G11] Menghentikan batch karena {MAX_ERR_BERTURUT} error teknis berturut-turut!")
+                    break
                 continue
 
             # Tunggu halaman FASIH selesai initial load/redirect
@@ -1687,22 +2148,27 @@ def main():
                 pass
             time.sleep(1.5)
 
+            # Konfirmasi interaktif hanya aktif jika user memilih mode interaktif di menu utama (pilihan 1 atau 2)
+            # Pada mode batch (pilihan 3 atau 4), bot langsung mengedit dan mengeksekusi secara otomatis
+            baris_interaktif = interaktif
+
+
             # 4. Eksekusi form di tab FASIH
             hasil, info = eksekusi_baris(
                 fasih_page, 
                 row, 
                 dry_run=dry_run, 
-                interaktif=interaktif, 
+                interaktif=baris_interaktif, 
                 isi_catatan=tanya_catatan, 
                 nerwana_updater=nerwana_updater,
                 target_info=target_info,
                 kategori=kategori_aktif
             )
 
-            # Sesuai instruksi: selesai submit / selesai eksekusi, tutup tab FASIH
+            # Selesai submit / selesai eksekusi, tutup tab FASIH
             try:
                 if fasih_page and not fasih_page.is_closed():
-                    print("[FASIH] Selesai submit / eksekusi. Menutup tab FASIH...")
+                    print("[FASIH] Selesai eksekusi baris. Menutup tab FASIH...")
                     fasih_page.close()
             except Exception as e_close:
                 print(f"[WARN] Gagal menutup tab FASIH: {e_close}")
@@ -1715,26 +2181,41 @@ def main():
             except Exception:
                 pass
 
-            # EVALUASI HASIL:
+            # EVALUASI HASIL & STOP-LOSS (G11):
             if hasil == "WAF_BLOCK":
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 waf_terdeteksi = True
                 waf_bot_code = info or "BOT-DETECTED"
                 print("\n[CIRCUIT BREAKER] Program dihentikan total karena WAF bot terdeteksi.")
                 break
+
             elif hasil == "SSO_LIMIT_EXCEEDED":
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 print("\n[SSO STOP] Batch dihentikan karena SSO memerlukan intervensi login manual.")
                 break
-            elif hasil in ["APPLIED", "SUBMITTED"]:
-                sukses += 1
+
+            elif hasil == "SYNC_FAILED":
+                # Tugas 5: Jika update Selancar gagal, jangan tulis COMPLETED. Catat status SYNC_FAILED dan hentikan batch.
+                gagal += 1
+                consecutive_errors += 1
                 session_skip_aids.add(aid)
+                print(f"\n[SYNC_FAILED] Hentikan batch karena sinkronisasi Selancar gagal untuk '{nama}'!")
+                break
+
+            elif hasil in ["APPLIED", "COMPLETED"]:
+                sukses += 1
+                consecutive_errors = 0  # Reset stop-loss counter
+                session_skip_aids.add(aid)
+                if hasil == "COMPLETED":
+                    total_submitted_count += 1
                 if sukses < limit:
-                    # JEDA WAJAR: 4-7 detik acak antar assignment
-                    jeda = random.uniform(4.0, 7.0)
+                    jeda = random.uniform(JEDA_ANTAR_ASSIGNMENT_MIN, JEDA_ANTAR_ASSIGNMENT_MAX)
                     print(f"[JEDA] Menunggu {jeda:.1f} detik sebelum assignment berikutnya...")
+                    time.sleep(jeda)
+
             elif hasil == "ALREADY_COMPLETED":
                 di_skip += 1
+                consecutive_errors = 0
                 session_skip_aids.add(aid)
                 print(f"[SELANCAR] Memastikan status assignment '{nama}' menjadi 'Sudah direvisi' di Selancar...")
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status="sudah_direvisi")
@@ -1743,31 +2224,47 @@ def main():
                 conn.commit()
                 conn.close()
                 time.sleep(1.0)
-            elif hasil in ["SKIPPED_FASIH_ERROR", "KBLI_MISMATCH", "CANCELLED"]:
+
+            elif hasil in ["SKIP", "NEED_REVIEW", "SKIPPED_FASIH_ERROR", "KBLI_MISMATCH", "CANCELLED"]:
                 di_skip += 1
+                consecutive_errors = 0  # Evaluasi normal bukan error teknis sistem
                 session_skip_aids.add(aid)
-                print(f"[SELANCAR] Mengembalikan status assignment '{nama}' ke semula karena tidak disubmit...")
-                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 if hasil == "CANCELLED":
                     print("[INFO] Eksekusi dihentikan oleh reviewer.")
                     break
                 time.sleep(random.uniform(1.5, 3.0))
+
+            elif hasil in STATUS_ERROR_TEKNIS:
+                # Tugas 4 (G11): Error teknis (READBACK_MISMATCH, REMARK_FAILED, FAILED)
+                gagal += 1
+                consecutive_errors += 1
+                session_skip_aids.add(aid)
+                print(f"[STOP-LOSS CHECK] Error teknis berturut-turut: {consecutive_errors}/{MAX_ERR_BERTURUT} (Status: {hasil})")
+                if consecutive_errors >= MAX_ERR_BERTURUT:
+                    print(f"\n[CIRCUIT BREAKER G11] Menghentikan batch karena {MAX_ERR_BERTURUT} error teknis berturut-turut!")
+                    break
+                time.sleep(2.0)
+
             else:
                 gagal += 1
+                consecutive_errors += 1
                 session_skip_aids.add(aid)
-                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+                if consecutive_errors >= MAX_ERR_BERTURUT:
+                    print(f"\n[CIRCUIT BREAKER G11] Menghentikan batch karena {MAX_ERR_BERTURUT} error teknis berturut-turut!")
+                    break
                 if pilihan in ["1", "2"]:
                     break
 
         print("\n" + "=" * 65)
         print("RINGKASAN EKSEKUSI:")
         print(f"Target Berhasil : {sukses} / {limit}")
-        print(f"Dilewati (Skip) : {di_skip} (Sudah selesai di Selancar / KBLI mismatch / Forbidden biasa)")
+        print(f"Dilewati (Skip) : {di_skip} (Selesai sebelumnya / Evaluasi SKIP / NEED_REVIEW)")
         print(f"Gagal/Batal     : {gagal}")
         print(f"Berhenti WAF    : {'YA (' + waf_bot_code + ')' if waf_terdeteksi else 'TIDAK'}")
         if sukses >= limit and limit > 1 and not waf_terdeteksi:
-            print(f"[INFO] Batch 1 sesi selesai (target {limit} baris terpenuhi). Silakan jalankan lagi nanti.")
+            print(f"[INFO] Batch 1 sesi selesai (target {limit} baris terpenuhi).")
         print("=" * 65)
 
 if __name__ == "__main__":
     main()
+

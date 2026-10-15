@@ -5,11 +5,33 @@ from datetime import datetime
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data_cleaning.db")
 
+# Kolom-kolom baru yang ditambahkan di Fase 0 (migrasi aman, nullable)
+_MIGRATION_COLUMNS = [
+    ("kasus_nerwana", "blok", "TEXT"),
+    ("kasus_nerwana", "nilai_lama_fasih", "TEXT"),       # JSON: {pbj, prod, ops, beli}
+    ("kasus_nerwana", "nilai_baru_fasih", "TEXT"),       # JSON: {pbj, prod, ops, beli}
+    ("kasus_nerwana", "alasan_skip", "TEXT"),
+    ("kasus_nerwana", "remark_terverifikasi", "INTEGER DEFAULT 0"),
+    ("kasus_nerwana", "evaluasi_at", "TIMESTAMP"),
+]
+
+def _safe_migrate(conn):
+    """Menambahkan kolom baru ke tabel yang sudah ada secara aman.
+    ALTER TABLE ... ADD COLUMN akan diabaikan jika kolom sudah ada."""
+    for table, col, col_type in _MIGRATION_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}")
+        except sqlite3.OperationalError:
+            # Kolom sudah ada, abaikan
+            pass
+    conn.commit()
+
 def get_connection():
     if not os.path.exists(DB_PATH) or os.path.getsize(DB_PATH) == 0:
         init_db()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    _safe_migrate(conn)
     return conn
 
 def init_db():
