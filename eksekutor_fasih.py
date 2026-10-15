@@ -772,7 +772,7 @@ def buka_blok_ii(page, nama_usaha=""):
     # Tunggu render kuesioner usaha selesai dimuat
     for _ in range(12):
         try:
-            if page.locator("[id^='nilai_pendapatan_bln#']:visible, [id^='biaya_produksi_bln#']:visible, [id^='kategori#']:visible").count() > 0:
+            if page.locator("[id^='nilai_pendapatan_bln#']:visible, [id^='biaya_produksi_bln#']:visible, [id^='nilai_pendapatan#']:visible, [id^='biaya_produksi#']:visible, [id^='kategori#']:visible").count() > 0:
                 break
             if page.locator('div:has-text("31. a"), div:has-text("27. a")').count() > 0:
                 break
@@ -783,7 +783,7 @@ def buka_blok_ii(page, nama_usaha=""):
     # Deteksi idx usaha aktif dari container yang visible (misal #1, #2, #1001)
     idx = 1
     try:
-        vis_cont = page.locator("[id^='nilai_pendapatan_bln#']:visible, [id^='biaya_produksi_bln#']:visible, [id^='kategori#']:visible").first
+        vis_cont = page.locator("[id^='nilai_pendapatan_bln#']:visible, [id^='biaya_produksi_bln#']:visible, [id^='nilai_pendapatan#']:visible, [id^='biaya_produksi#']:visible, [id^='kategori#']:visible").first
         if vis_cont.count() > 0:
             c_id = vis_cont.get_attribute("id") or ""
             m_idx = re.search(r'#(\d+)', c_id)
@@ -798,7 +798,7 @@ def deteksi_blok(page, timeout=8) -> str:
     """
     Mendeteksi jenis blok di Blok II FASIH (Tugas 1):
     - 'usaha_2026': terdapat container id nilai_pendapatan_bln#N atau biaya_produksi_bln#N (isian 30/31)
-    - 'biasa': terdapat isian 27/28
+    - 'biasa': terdapat container id nilai_pendapatan#N atau biaya_produksi#N (isian 26/27)
     - 'unknown': tidak dapat dideteksi setelah batas timeout
     """
     start = time.time()
@@ -811,6 +811,8 @@ def deteksi_blok(page, timeout=8) -> str:
                 return "usaha_2026"
                 
             # Usaha biasa (isian 26/27/28)
+            if page.locator("[id^='nilai_pendapatan#'], [id^='biaya_produksi#']").count() > 0:
+                return "biasa"
             if page.locator('div:has-text("27. a"), div:has-text("27.a"), div:has-text("26. a")').count() > 0:
                 return "biasa"
         except Exception:
@@ -963,33 +965,56 @@ def baca_nilai_fasih(page, blok, idx=1) -> dict:
 
 
     elif blok == "biasa":
-        # TODO: Blok usaha biasa (isian 27/28) belum ada dump HTML-nya. Minta dump lewat dump_fasih_html.py.
-        # Fallback sementara menggunakan label pencarian yang ada di kode:
+        # Blok usaha biasa (isian 26 biaya & 27 pendapatan tahunan)
+        c_pbj = page.locator(f'[id="nilai_pendapatan#{idx}"]')
+        c_prod = page.locator(f'[id="biaya_produksi#{idx}"]')
+        c_ops = page.locator(f'[id="operasional#{idx}"]')
+        c_beli = page.locator(f'[id="biaya_pembelian#{idx}"]')
+        c_tanah = page.locator(f'[id="aset_usaha_thn#{idx}"]')
+
+        if c_pbj.count() == 0:
+            res['ok'] = False
+            res['error'] = f"Container 27.a [id='nilai_pendapatan#{idx}'] tidak ditemukan"
+            return res
+
+        if c_prod.count() == 0:
+            res['ok'] = False
+            res['error'] = f"Container 26.b [id='biaya_produksi#{idx}'] tidak ditemukan"
+            return res
+
+        if c_ops.count() == 0:
+            res['ok'] = False
+            res['error'] = f"Container 26.d [id='operasional#{idx}'] tidak ditemukan"
+            return res
+
         try:
-            loc_pbj = page.locator('div:has-text("27. a"), div:has-text("27.a"), div:has-text("barang dan jasa")').last
-            loc_prod = page.locator('div:has-text("Biaya produksi")').last
-            loc_ops = page.locator('div:has-text("Biaya operasional")').last
+            inp_pbj = c_pbj.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+            inp_prod = c_prod.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+            inp_ops = c_ops.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
 
-            if loc_pbj.count() > 0:
-                inp_pbj = loc_pbj.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
-                res['pbj'] = _clean_num(inp_pbj.input_value())
-                res['field_locators']['pbj'] = inp_pbj
+            res['pbj'] = _clean_num(inp_pbj.input_value())
+            res['prod'] = _clean_num(inp_prod.input_value())
+            res['ops'] = _clean_num(inp_ops.input_value())
+
+            res['field_locators']['pbj'] = inp_pbj
+            res['field_locators']['prod'] = inp_prod
+            res['field_locators']['ops'] = inp_ops
+
+            if c_beli.count() > 0:
+                inp_beli = c_beli.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+                if inp_beli.count() > 0:
+                    res['beli'] = _clean_num(inp_beli.input_value())
+                    res['field_locators']['beli'] = inp_beli
+
+            if c_tanah.count() > 0:
+                inp_tanah = c_tanah.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
+                if inp_tanah.count() > 0:
+                    res['aset_tanah'] = _clean_num(inp_tanah.input_value())
+                    res['field_locators']['aset_tanah'] = inp_tanah
             else:
-                res['ok'] = False
-                res['error'] = "TODO: Field 27.a usaha biasa tidak ditemukan (membutuhkan dump HTML)"
-                return res
+                res['aset_tanah'] = 0.0
 
-            if loc_prod.count() > 0:
-                inp_prod = loc_prod.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
-                res['prod'] = _clean_num(inp_prod.input_value())
-                res['field_locators']['prod'] = inp_prod
-
-            if loc_ops.count() > 0:
-                inp_ops = loc_ops.locator('input[type="text"], input:not([type="checkbox"]):not([type="radio"])').first
-                res['ops'] = _clean_num(inp_ops.input_value())
-                res['field_locators']['ops'] = inp_ops
-
-            res['bulan_beroperasi'] = 12
+            res['bulan_beroperasi'] = 12  # Usaha biasa beroperasi skala tahunan
         except Exception as e:
             res['ok'] = False
             res['error'] = f"Gagal membaca input nilai usaha biasa: {e}"
@@ -1075,12 +1100,17 @@ def isi_field_dengan_readback(page, input_locator, nilai_baru, nilai_lama=None):
         print(f"  [READBACK-ERROR] Gagal isi & readback: {e}")
         return False, str(e)
 
-def cari_container_isian_27a(page):
+def cari_container_isian_27a(page, idx=None):
     """
     Mencari container pertanyaan untuk isian 27a (atau 31a untuk usaha beroperasi 2026),
     yaitu 'Nilai produksi/pendapatan/penjualan barang dan jasa'.
     Di sinilah remark #DC_01 WAJIB diletakkan sesuai instruksi reviewer.
     """
+    if idx is not None:
+        c_spec = page.locator(f'[id="nilai_pendapatan#{idx}"], [id="nilai_pendapatan_bln#{idx}"]').first
+        if c_spec.count() > 0:
+            return c_spec
+
     keywords = ["31. a", "31.a", "27. a", "27.a", "barang dan jasa"]
     for kw in keywords:
         containers = page.locator(f'div:has-text("{kw}")')
@@ -1679,7 +1709,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         print(f"[FASIH] Blok terdeteksi: '{blok_jenis}' (Indeks usaha #{idx_usaha})")
 
         # 4.5 Anti-Tabrakan: Cek apakah Isian Pendapatan (27a/31a) sudah memiliki catatan #DC
-        c_pendapatan_cek = cari_container_isian_27a(page)
+        c_pendapatan_cek = cari_container_isian_27a(page, idx=idx_usaha)
         ada_dc, teks_dc = cek_catatan_eksisting_27a(page, c_pendapatan_cek)
         if ada_dc:
             print(f"\n[FASIH-SKIP] Isian Pendapatan SUDAH berisi catatan DC: '{teks_dc}'!")
@@ -1798,7 +1828,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         time.sleep(0.5)
 
         # 10. Tambah Catatan / Remark (Tugas 5 & PRD §7.3)
-        c_pendapatan = c_pendapatan_cek or cari_container_isian_27a(page)
+        c_pendapatan = c_pendapatan_cek or cari_container_isian_27a(page, idx=idx_usaha)
         catatan_final = kode_catatan or "#DC_01"
         remark_ok = False
         if isi_catatan:
