@@ -209,7 +209,7 @@ def ulang_buka_assignment_dari_selancar(fasih_page, selancar_page=None, link_btn
     # Jika link_btn belum ada atau invalid, cari dari tabel di selancar_page
     if not link_btn and selancar_page and not selancar_page.is_closed():
         try:
-            link_candidate = selancar_page.locator('a.dc-link-btn, a[href*="assignment"]').first
+            link_candidate = selancar_page.locator('a.dc-link-btn, a.assignment-link, a[href*="assignment"]').first
             if link_candidate.count() > 0:
                 link_btn = link_candidate
                 target_url = link_btn.get_attribute("href")
@@ -452,6 +452,11 @@ def wait_fasih_ready(page, selancar_page=None, link_btn=None, timeout=30):
             # - Tombol Edit teks
             if page.locator('button:has-text("Edit Assignment"), button:has-text("Edit"), [title*="Edit" i]').count() > 0:
                 print("[FASIH] Tombol Edit siap di layar!")
+                return "READY", None
+
+            # - Menu BLOK Kuesioner (SE2026 - L BLOK I / BLOK II)
+            if page.locator('div[title*="BLOK"], div:has-text("BLOK I"), div:has-text("BLOK II")').count() > 0:
+                print("[FASIH] Menu BLOK Kuesioner siap di layar!")
                 return "READY", None
 
         except Exception:
@@ -1376,98 +1381,96 @@ def aktifkan_switch_anomali(page):
     """
     Memastikan toggle 'Tampilkan Anomali Usaha dan Keluarga' dalam posisi ON.
     HANYA mengaktifkan switch 'Tampilkan Anomali', TIDAK menyentuh switch 'anomali diselesaikan admin'.
-    Menggunakan Playwright locator klik pada visual control div [id$="-control"].
+    Jika gagal/tidak terdeteksi, bot tidak terhenti dan langsung melanjutkan ke proses Kirim.
     """
     print("[FASIH] Memeriksa switch 'Tampilkan Anomali Usaha dan Keluarga'...")
     try:
-        for attempt in range(3):
-            # 1. Cek status aria-checked pada input switch di baris tersebut
-            status = page.evaluate('''() => {
-                const allElements = Array.from(document.querySelectorAll('div, label, section, tr'));
-                const targetContainer = allElements.reverse().find(el => {
-                    const txt = el.textContent || '';
-                    return txt.includes('Tampilkan Anomali') && !txt.includes('diselesaikan') && !txt.includes('admin');
-                });
-                if (targetContainer) {
-                    const sw = targetContainer.querySelector('[role="switch"], input[type="checkbox"]');
-                    if (sw) return sw.getAttribute("aria-checked") || "false";
+        cek_status_js = '''() => {
+            const allNodes = Array.from(document.querySelectorAll('*')).filter(el => {
+                const t = (el.textContent || '').trim();
+                return el.children.length === 0 && t.includes('Tampilkan Anomali') && !t.includes('admin') && !t.includes('diselesaikan');
+            });
+            if (allNodes.length === 0) return "not_found";
+            let parent = allNodes[0].parentElement;
+            for (let i = 0; i < 5 && parent; i++) {
+                const sw = parent.querySelector('[role="switch"], input[type="checkbox"], button[role="switch"], [id$="-control"]');
+                if (sw) {
+                    const isChecked = sw.getAttribute("aria-checked") === "true" ||
+                                      sw.getAttribute("data-checked") !== null ||
+                                      sw.checked === true ||
+                                      (sw.className && (sw.className.includes("checked") || sw.className.includes("orange") || sw.className.includes("primary")));
+                    return isChecked ? "true" : "false";
                 }
-                return null;
+                parent = parent.parentElement;
+            }
+            return "unknown";
+        }'''
+
+        status = page.evaluate(cek_status_js)
+        if status == "true":
+            print("[FASIH] Switch 'Tampilkan Anomali Usaha dan Keluarga' SUDAH AKTIF (aria-checked='true')!")
+            return True
+
+        for attempt in range(2):
+            print(f"[FASIH] Switch masih non-aktif / belum terdeteksi (status: {status}). Mengklik switch anomali (percobaan {attempt+1})...")
+
+            clicked = page.evaluate('''() => {
+                const allNodes = Array.from(document.querySelectorAll('*')).filter(el => {
+                    const t = (el.textContent || '').trim();
+                    return el.children.length === 0 && t.includes('Tampilkan Anomali') && !t.includes('admin') && !t.includes('diselesaikan');
+                });
+                if (allNodes.length === 0) return false;
+                let parent = allNodes[0].parentElement;
+                for (let i = 0; i < 5 && parent; i++) {
+                    const sw = parent.querySelector('[role="switch"], input[type="checkbox"], button[role="switch"], [id$="-control"], span, label');
+                    if (sw && sw !== allNodes[0]) {
+                        sw.click();
+                        return true;
+                    }
+                    parent = parent.parentElement;
+                }
+                return false;
             }''')
 
-            if status == "true":
-                print("[FASIH] Switch 'Tampilkan Anomali Usaha dan Keluarga' SUDAH AKTIF (aria-checked='true')!")
-                return True
-
-            print(f"[FASIH] Switch masih non-aktif (status: {status}). Mengklik kontrol switch (percobaan {attempt+1})...")
-
-            # 2. Cari kontrol visual yang dapat diklik
-            clicked = False
-            ctrl = page.locator('div, section').filter(has_text="Tampilkan Anomali Usaha dan Keluarga").filter(has_not_text="admin").locator('[id$="-control"]').first
-            if ctrl.count() > 0 and ctrl.is_visible():
-                ctrl.click()
-                clicked = True
-            
             if not clicked:
-                ctrl_global = page.locator('[id$="-control"]').first
-                if ctrl_global.count() > 0 and ctrl_global.is_visible():
-                    ctrl_global.click()
-                    clicked = True
-
-            if not clicked:
-                grp = page.locator('[role="group"][id*="switch"]').first
-                if grp.count() > 0 and grp.is_visible():
-                    grp.click()
+                sw_loc = page.locator('div, label, tr, section').filter(has_text="Tampilkan Anomali Usaha dan Keluarga").filter(has_not_text="admin").locator('[role="switch"], button, [id$="-control"]').first
+                if sw_loc.count() > 0 and sw_loc.is_visible():
+                    sw_loc.click()
                     clicked = True
 
             time.sleep(1)
-
-            # Cek status setelah klik
-            status_after = page.evaluate('''() => {
-                const allElements = Array.from(document.querySelectorAll('div, label, section, tr'));
-                const targetContainer = allElements.reverse().find(el => {
-                    const txt = el.textContent || '';
-                    return txt.includes('Tampilkan Anomali') && !txt.includes('diselesaikan') && !txt.includes('admin');
-                });
-                if (targetContainer) {
-                    const sw = targetContainer.querySelector('[role="switch"], input[type="checkbox"]');
-                    if (sw) return sw.getAttribute("aria-checked") || "false";
-                }
-                return null;
-            }''')
-
+            status_after = page.evaluate(cek_status_js)
             if status_after == "true":
                 print("[FASIH] Switch 'Tampilkan Anomali Usaha dan Keluarga' BERHASIL DIAKTIFKAN & TERVERIFIKASI!")
                 return True
 
-        print("[WARN] Switch anomali telah dicoba diklik, namun belum terkonfirmasi 'true'.")
+        print("[WARN] Switch anomali tidak terkonfirmasi aktif, langsung melanjutkan ke tombol Kirim...")
         return False
     except Exception as e:
-        print(f"[WARN] Kendala saat mengaktifkan switch anomali: {e}")
+        print(f"[WARN] Kendala saat memeriksa switch anomali: {e}, langsung melanjutkan ke tombol Kirim...")
         return False
 
 def proses_halaman_catatan_dan_tampilkan_anomali(page):
     """
     Rangkaian di halaman CATATAN sesuai instruksi user:
     1. Buka CATATAN
-    2. Langsung tampilkan anomali usaha & keluarga (switch ON)
-       - TIDAK PERLU klik 'Perbarui Waktu' / 'Ambil Waktu'!
-       - TIDAK MENYENTUH switch 'anomali diselesaikan admin'!
-    3. Selesai dan langsung siap submit.
+    2. Coba aktifkan switch anomali usaha & keluarga
+    3. Jika gagal/sudah aktif, langsung siap kirim.
     """
     print("\n" + "-" * 50)
-    print("[FASIH] Halaman CATATAN: Langsung tampilkan anomali usaha & keluarga...")
+    print("[FASIH] Halaman CATATAN: Memeriksa anomali usaha & keluarga...")
     print("-" * 50)
 
     # 1. Buka CATATAN
     buka_menu_catatan(page)
     time.sleep(1)
 
-    # 2. Hidupkan switch anomali (tanpa ambil waktu)
+    # 2. Coba aktifkan switch anomali (non-blocking)
     aktifkan_switch_anomali(page)
     time.sleep(1)
 
-    print("[FASIH] Pengaturan CATATAN selesai. Langsung siap kirim di halaman ini!")
+    print("[FASIH] Pengaturan CATATAN selesai. Langsung siap proses Kirim!")
+    return True
     return True
 
 def submit_assignment(page, max_retries=2):
@@ -1509,7 +1512,7 @@ def submit_assignment(page, max_retries=2):
         if not klik_kirim_sukses:
             print("[ERROR] Tombol Kirim tidak ditemukan di navbar maupun di kanan bawah.")
             if attempt == max_retries:
-                return False
+                return False, "TOMBOL_KIRIM_TIDAK_DITEMUKAN"
             time.sleep(2)
             continue
 
@@ -1521,25 +1524,28 @@ def submit_assignment(page, max_retries=2):
             dialog = page.locator('.tw\\:fixed, .fixed, [role="dialog"]').last
 
         # 3. Periksa apakah ada Galat
-        txt_dialog = dialog.inner_text().upper() if dialog.count() > 0 and dialog.is_visible() else ""
+        txt_dialog = dialog.inner_text().strip() if dialog.count() > 0 and dialog.is_visible() else ""
+        txt_dialog_upper = txt_dialog.upper()
         ada_galat = False
         jumlah_galat = 0
         
-        m = re.search(r'GALAT\s*[:\s]*(\d+)', txt_dialog)
+        m = re.search(r'GALAT\s*[:\s]*(\d+)', txt_dialog_upper)
         if m:
             jumlah_galat = int(m.group(1))
             if jumlah_galat > 0:
                 ada_galat = True
                 print(f"[PERINGATAN] Terdeteksi GALAT: {jumlah_galat} di dialog Kirim FASIH!")
+                ringkasan_dialog = " | ".join([line.strip() for line in txt_dialog.splitlines() if line.strip()])
+                print(f"[FASIH] Ringkasan dialog: {ringkasan_dialog}")
 
         if ada_galat:
-            print("[FASIH] Terdeteksi galat, membatalkan submit...")
+            print("[FASIH] Terdeteksi galat pada kuesioner, membatalkan submit dialog...")
             try:
                 page.keyboard.press("Escape")
                 time.sleep(1)
             except:
                 pass
-            return False
+            return False, f"GALAT_{jumlah_galat}"
 
         # 4. Jika Galat == 0, klik tombol Kirim yang ada di dalam dialog modal
         print("[FASIH] Modal Kirim terbuka (GALAT: 0). Mengklik tombol Kirim di dalam dialog...")
@@ -1578,14 +1584,14 @@ def submit_assignment(page, max_retries=2):
         # 6. Verifikasi submit
         if page.locator('div[role="dialog"]:has-text("Kirim")').count() == 0:
             print("[FASIH] Assignment berhasil disubmit ke FASIH!")
-            return True
+            return True, None
         else:
             time.sleep(2)
             if page.locator('div[role="dialog"]:has-text("Kirim")').count() == 0:
                 print("[FASIH] Assignment berhasil disubmit ke FASIH!")
-                return True
+                return True, None
 
-    return False
+    return False, "GAGAL_VERIFIKASI_SUBMIT"
 
 def handle_waf_block(page, row, bot_code):
     """
@@ -1904,7 +1910,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
             return "APPLIED", None
         else:
-            submit_ok = submit_assignment(page)
+            submit_ok, submit_err = submit_assignment(page)
             if submit_ok:
                 try:
                     ss_path = os.path.join(SCREENSHOTS_DIR, f"submitted_{aid}_{int(time.time())}.png")
@@ -1944,7 +1950,15 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
                 is_waf, bot_code = cek_waf_bot(page)
                 if is_waf:
                     return handle_waf_block(page, row, bot_code)
-                raise Exception("Gagal klik / verifikasi submit FASIH")
+                if submit_err and "GALAT" in str(submit_err):
+                    print(f"\n[GALAT DIALOG] {submit_err}. Assignment '{aid}' ({nama}) tidak dapat disubmit ke FASIH.")
+                    print("[INFO] Mengembalikan status di Selancar ke status semula...")
+                    set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', 'belum'))
+                    conn.execute("UPDATE kasus_nerwana SET status = 'NEED_REVIEW', alasan_review = ? WHERE assignment_id = ? AND nama_usaha = ?", (f"Kuesioner FASIH memiliki {submit_err}", aid, nama))
+                    conn.commit()
+                    log_audit(aid, nama, "NEED_REVIEW", status_sebelumnya="PENDING", status_baru="NEED_REVIEW", pesan=f"Gagal submit karena {submit_err}")
+                    return "NEED_REVIEW", submit_err
+                raise Exception(f"Gagal klik / verifikasi submit FASIH: {submit_err}")
 
     except Exception as e:
         import traceback

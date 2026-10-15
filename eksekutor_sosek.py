@@ -22,7 +22,7 @@ import random
 from playwright.sync_api import sync_playwright
 
 from updater_nerwana import pastikan_login_selancar
-from eksekutor_fasih import selesaikan_sso_pada_fasih
+from eksekutor_fasih import selesaikan_sso_pada_fasih, wait_fasih_ready, ulang_buka_assignment_dari_selancar
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SCREENSHOTS_DIR = os.path.join(BASE_DIR, "screenshots")
@@ -138,43 +138,56 @@ def jalankan_verifikasi_sosek(pilihan_mode="1", limit=1):
             print(f"\n>>> Memproses Target [{sukses + 1}/{limit}] (Baris {row_num}) <<<")
             print(f"[SELANCAR] KK: {nama_kk} | NIK Flag: {nik_target}")
 
-            # 2. Buka assignment FASIH via link_btn
-            print("[SELANCAR] Membuka assignment FASIH...")
+            # 2. Buka tab FASIH dari baris tabel di Selancar (Persis alur Data Cleaning)
+            for pg in context.pages:
+                try:
+                    if not pg.is_closed() and ("fasih-sm.bps.go.id" in pg.url.lower() or "sso.bps.go.id" in pg.url.lower()):
+                        pg.close()
+                except Exception:
+                    pass
+            fasih_page = None
+
+            print("[SELANCAR] Membuka tab FASIH dari baris tabel Selancar...")
+            link_btn = target_info["link_btn"]
+            link_btn.scroll_into_view_if_needed()
+            time.sleep(0.5)
+
             try:
-                with context.expect_page() as new_page_info:
-                    target_info["link_btn"].scroll_into_view_if_needed()
-                    time.sleep(0.3)
-                    target_info["link_btn"].click()
+                with context.expect_page(timeout=20000) as new_page_info:
+                    link_btn.click()
                 fasih_page = new_page_info.value
-            except Exception as e_open:
-                print(f"[WARN] Gagal membuka tab assignment: {e_open}")
+            except Exception as e_click:
+                print(f"[WARN] Tab baru tidak tertangkap via expect_page: {e_click}. Mencari tab FASIH...")
+                fasih_pages = [pg for pg in context.pages if ("fasih" in pg.url.lower() or "sso.bps.go.id" in pg.url.lower()) and not pg.is_closed()]
+                if fasih_pages:
+                    fasih_page = fasih_pages[-1]
+
+            if not fasih_page or fasih_page.is_closed():
+                print("[ERROR] Gagal membuka/menghubungkan tab FASIH. Mencoba baris berikutnya...")
                 gagal += 1
                 continue
 
-            fasih_page.wait_for_load_state("domcontentloaded")
-            selesaikan_sso_pada_fasih(fasih_page, selancar_page=selancar_page)
+            try:
+                fasih_page.wait_for_load_state("domcontentloaded", timeout=15000)
+            except Exception:
+                pass
+            time.sleep(1.5)
 
-            # 3. Tunggu hingga kuesioner siap atau error
-            loaded = False
-            for _ in range(30):
-                time.sleep(1.5)
-                if fasih_page.locator("text=\"There's some error\"").count() > 0:
-                    print(f"[WARN] Assignment {aid} mengalami error 'There's some error' di server BPS. Dilewati.")
-                    di_skip += 1
-                    try:
-                        fasih_page.close()
-                    except Exception:
-                        pass
-                    break
-                if fasih_page.locator('div[title*="BLOK"], div:has-text("BLOK")').count() > 0:
-                    loaded = True
-                    break
+            # Selesaikan SSO jika terlempar ke SSO atau 'Selamat Datang Kembali'
+            sso_res, sso_bot = selesaikan_sso_pada_fasih(fasih_page, selancar_page=selancar_page, link_btn=link_btn)
+            if sso_res == "SSO_LIMIT_EXCEEDED":
+                print("\n[SSO STOP] Dihentikan karena SSO memerlukan login manual.")
+                break
 
-            if not loaded:
+            # Tunggu kuesioner siap (otomatis menangani redirect dashboard /app/ dan membuka ulang link)
+            ready_res, ready_bot = wait_fasih_ready(fasih_page, selancar_page=selancar_page, link_btn=link_btn, timeout=40)
+            if ready_res != "READY":
+                print(f"[WARN] Assignment tidak siap di FASIH (Status: {ready_res}). Dilewati.")
                 try:
                     fasih_page.close()
                 except Exception:
                     pass
+                di_skip += 1
                 continue
 
             # 4. Masuk ke SE2026 - L BLOK I
@@ -281,6 +294,15 @@ def jalankan_verifikasi_sosek(pilihan_mode="1", limit=1):
             else:
                 di_skip += 1
                 time.sleep(1.0)
+
+            # Selesai verifikasi baris, tutup tab FASIH
+            try:
+                if fasih_page and not fasih_page.is_closed():
+                    print("[FASIH] Selesai verifikasi baris. Menutup tab FASIH...")
+                    fasih_page.close()
+            except Exception:
+                pass
+            fasih_page = None
 
         print("\n" + "=" * 65)
         print("RINGKASAN EKSEKUSI SOSEK 33:")
