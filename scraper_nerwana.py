@@ -19,12 +19,13 @@ SPECIFIC_FILTERS = [
     ("pend_250jt", "Pendapatan total di atas Rp 250 juta"),
     ("pbj_lt_lain", "Pendapatan barang & jasa < Pendapatan lainnya"),
     ("pbj0_lain_pos", "Pendapatan barang & jasa = 0 dan lainnya > 0"),
-    ("", "Semua (tanpa filter spesifik)")
+    ("none", "Semua (tanpa filter spesifik)")
 ]
 
-def parse_and_save_page(html_content, filter_name=""):
+def parse_and_save_page(html_content, filter_name="none", kategori="A"):
     soup = BeautifulSoup(html_content, 'html.parser')
     calc_btns = soup.find_all(lambda tag: tag.has_attr('data-aid'))
+    kat = (kategori or "A").upper().strip()
     
     saved_count = 0
     for btn in calc_btns:
@@ -62,7 +63,7 @@ def parse_and_save_page(html_content, filter_name=""):
             'assignment_id': btn.get('data-aid', '').strip(),
             'nama_usaha': btn.get('data-nama', '').strip(),
             'kabkota': '1175',
-            'kategori': 'A',
+            'kategori': kat,
             'kbli': kbli,
             'deskripsi_kbli': deskripsi_kbli,
             'link_fasih': btn.get('data-link', '').strip(),
@@ -75,7 +76,7 @@ def parse_and_save_page(html_content, filter_name=""):
             'output': float(btn.get('data-output', 0) or 0),
             'ntb': float(btn.get('data-ntb', 0) or 0),
             'rasio': float(btn.get('data-rasio', 0) or 0),
-            'filter_spesifik': filter_name or 'semua',
+            'filter_spesifik': filter_name or 'none',
             'tindak_lanjut': tindak_lanjut,
             'tindak_lanjut_oleh': tl_oleh,
             'data_kunci': data_kunci
@@ -98,20 +99,24 @@ def get_total_pages(html_content):
                 max_page = p
     return max_page
 
-def scrape_filter(page, filter_code, filter_label, per_page=50):
-    print(f"\n" + "=" * 60)
-    print(f"Memproses Filter: [{filter_code or 'SEMUA'}] - {filter_label}")
-    print("=" * 60)
+def scrape_kategori(page, kategori="A", per_page=50):
+    kat = (kategori or "A").upper().strip()
+    print(f"\n" + "=" * 65)
+    print(f"SCRAPING SELANCAR: KATEGORI {kat}")
+    print(f"Filter Flag     : Flag Rasio 3 (flag=rasio_3, kode=1)")
+    print(f"Filter Spesifik : Semua (tanpa filter spesifik / none)")
+    print("=" * 65)
     
     # Halaman 1
-    url = f"{BASE_URL}?sort=nilai_tambah&dir=asc&kabkota=1175&kategori=A&flag=rasio_3&kode=1&filter_spesifik={filter_code}&cari=&per_page={per_page}&page=1"
+    url = f"{BASE_URL}?sort=nilai_tambah&dir=asc&kabkota=1175&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page={per_page}&page=1"
+    print(f"-> Membuka URL: {url}")
     page.goto(url, timeout=60000)
     page.wait_for_load_state("domcontentloaded")
     time.sleep(1)
     
     html = page.content()
     total_pages = get_total_pages(html)
-    first_page_saved = parse_and_save_page(html, filter_code or "semua")
+    first_page_saved = parse_and_save_page(html, filter_name="none", kategori=kat)
     print(f"-> Halaman 1/{total_pages}: Berhasil menyimpan {first_page_saved} baris.")
     
     if total_pages <= 1:
@@ -123,15 +128,15 @@ def scrape_filter(page, filter_code, filter_label, per_page=50):
         delay = random.uniform(1.0, 2.0)
         time.sleep(delay)
         
-        next_url = f"{BASE_URL}?sort=nilai_tambah&dir=asc&kabkota=1175&kategori=A&flag=rasio_3&kode=1&filter_spesifik={filter_code}&cari=&per_page={per_page}&page={current_page}"
+        next_url = f"{BASE_URL}?sort=nilai_tambah&dir=asc&kabkota=1175&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page={per_page}&page={current_page}"
         print(f"-> Membuka Halaman {current_page}/{total_pages}...", end="\r")
         page.goto(next_url, timeout=60000)
         page.wait_for_load_state("domcontentloaded")
         
         page_html = page.content()
-        saved = parse_and_save_page(page_html, filter_code or "semua")
+        saved = parse_and_save_page(page_html, filter_name="none", kategori=kat)
         total_saved += saved
-        print(f"-> Halaman {current_page}/{total_pages}: +{saved} baris (Total filter ini: {total_saved})")
+        print(f"-> Halaman {current_page}/{total_pages}: +{saved} baris (Total kategori {kat}: {total_saved})")
 
     return total_saved
 
@@ -139,15 +144,29 @@ def main():
     init_db()
     
     print("=" * 65)
-    print("           FASE 1: SCRAPER NERWANA KE SQLITE")
+    print("           SCRAPER SELANCAR NERWANA KE SQLITE")
+    print("  Default: Flag Rasio 3 & Semua (tanpa filter spesifik)")
     print("=" * 65)
-    print("Menu Pilihan Scraping:")
-    print("  [1] Scrape Semua Filter Spesifik Saja (NTB negatif, 0, >250jt, dll) [Cepat: ~238 baris]")
-    print("  [2] Scrape Seluruh Data Lengkap (Semua 66 Halaman / 3.283 baris)   [Lengkap]")
-    print("  [3] Scrape Keduanya Berurutan (Filter Spesifik + Seluruh Data)       [Rekomendasi]")
+    print("Pilih Kategori Lapangan Usaha:")
+    print("  [1] Kategori A - Pertanian (Default)")
+    print("  [2] Kategori G - Perdagangan")
+    print("  [3] Kategori C - Industri Pengolahan")
+    print("  [Atau ketik langsung huruf kategori: B, D, E, F, H, I, J, K, L, M, N, O, P, Q, R, S, T]")
     print("=" * 65)
     
-    choice = input("Pilih mode [1/2/3] (default 3): ").strip() or "3"
+    kat_input = input("Masukkan pilihan kategori (default 1 - A): ").strip() or "1"
+    if kat_input == "1":
+        kategori_dipilih = "A"
+    elif kat_input == "2":
+        kategori_dipilih = "G"
+    elif kat_input == "3":
+        kategori_dipilih = "C"
+    else:
+        kategori_dipilih = kat_input.upper()
+    
+    print(f"\n[INFO] Menjalankan scraping untuk Kategori {kategori_dipilih}")
+    print(f"       - Flag: Flag Rasio 3")
+    print(f"       - Spesifik: Semua (tanpa filter spesifik)")
     
     with sync_playwright() as p:
         context = p.chromium.launch_persistent_context(
@@ -158,9 +177,9 @@ def main():
         )
         page = context.pages[0] if context.pages else context.new_page()
         
-        # Buka Nerwana
-        test_url = f"{BASE_URL}?sort=nilai_tambah&dir=asc&kabkota=1175&kategori=A&flag=rasio_3&kode=1&filter_spesifik=&cari=&per_page=50"
-        print(f"\nMembuka halaman Nerwana...")
+        # Buka halaman awal
+        test_url = f"{BASE_URL}?sort=nilai_tambah&dir=asc&kabkota=1175&kategori={kategori_dipilih}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50"
+        print(f"\nMembuka halaman Selancar Nerwana...")
         page.goto(test_url)
         
         # Cek apakah butuh login SSO
@@ -170,26 +189,17 @@ def main():
             print("Silakan login SSO BPS di jendela browser.")
             input("Tekan [ENTER] di terminal ini jika sudah login dan halaman tabel Nerwana tampil... ")
         
-        # Jalankan scraping berdasarkan pilihan
-        if choice == "1":
-            for f_code, f_label in SPECIFIC_FILTERS:
-                if f_code != "": # Hanya filter spesifik
-                    scrape_filter(page, f_code, f_label)
-        elif choice == "2":
-            scrape_filter(page, "", "Semua Data Lengkap")
-        elif choice == "3":
-            # Filter spesifik dulu
-            for f_code, f_label in SPECIFIC_FILTERS:
-                scrape_filter(page, f_code, f_label)
+        # Langsung scrape kategori terpilih dengan Flag 3 dan filter spesifik = none
+        total_scraped = scrape_kategori(page, kategori=kategori_dipilih)
                 
         # Cek total di SQLite
         conn = get_connection()
-        total_in_db = conn.execute("SELECT count(*) FROM kasus_nerwana").fetchone()[0]
+        total_in_db = conn.execute("SELECT count(*) FROM kasus_nerwana WHERE kategori = ?", (kategori_dipilih,)).fetchone()[0]
         conn.close()
         
         print("\n" + "=" * 65)
-        print(f"SCRAPING FASE 1 SELESAI!")
-        print(f"Total baris unik di SQLite (kasus_nerwana): {total_in_db}")
+        print(f"SCRAPING KATEGORI {kategori_dipilih} SELESAI!")
+        print(f"Total baris unik di SQLite untuk Kategori {kategori_dipilih}: {total_in_db}")
         print("=" * 65)
         
         context.close()

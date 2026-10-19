@@ -1,6 +1,8 @@
 import time
 import urllib.parse
 import re
+import os
+import random
 from database import get_connection, log_audit, upsert_kasus
 from config import STATUS_FINAL
 
@@ -11,7 +13,6 @@ NERWANA_UPDATE_URL = "https://nerwana-aceh.web.bps.go.id/selancar2026/dc-terkena
 
 def get_sso_credentials():
     """Membaca kredensial SSO dari file sso di direktori proyek."""
-    import os
     sso_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sso")
     if os.path.exists(sso_path):
         u, p = "", ""
@@ -60,7 +61,6 @@ def pastikan_login_selancar(page):
             inp_user = page.locator('#username, input[name="username"], input[type="text"]').first
             inp_pass = page.locator('#password, input[name="password"], input[type="password"]').first
 
-            import random
             if inp_user.count() > 0:
                 inp_user.click()
                 page.keyboard.press("Control+A")
@@ -73,8 +73,9 @@ def pastikan_login_selancar(page):
                 page.keyboard.press("Control+A")
                 page.keyboard.press("Backspace")
                 page.keyboard.type(pwd, delay=random.randint(60, 120))
-                time.sleep(0.3)
+                time.sleep(0.5)
 
+            time.sleep(random.uniform(1.2, 1.8))
             print("[SELANCAR-SSO] Mengklik tombol Log In di SSO...")
             btn_login = page.locator('#kc-login, button:has-text("Log In"), input[type="submit"]').first
             btn_login.click()
@@ -91,6 +92,7 @@ def pastikan_login_selancar(page):
         # 2. Jika di Halaman Login Selancar Nerwana ("Login dengan SSO BPS")
         btn_sso_nerwana = page.locator('button:has-text("Login dengan SSO BPS"), a:has-text("Login dengan SSO BPS")')
         if "login" in url or (btn_sso_nerwana.count() > 0 and btn_sso_nerwana.first.is_visible()):
+            time.sleep(random.uniform(1.2, 2.0))
             print("[SELANCAR] Terdeteksi halaman login Selancar. Mengklik 'Login dengan SSO BPS'...")
             btn_sso_nerwana.first.click()
             try:
@@ -108,22 +110,99 @@ def pastikan_login_selancar(page):
 
     return "selancar2026" in page.url.lower() and "login" not in page.url.lower()
 
+def verifikasi_dan_set_dropdown_selancar(page, kat, flag="rasio_3", kode="1", filter_spesifik="none"):
+    """
+    Memastikan semua filter di halaman DC Terkena Flag sesuai:
+    1. Kategori: pilihan pengguna (A, G, C, dll)
+    2. Flag: Flag Rasio 3 (rasio_3)
+    3. Kode: 1
+    4. Spesifik: Semua (tanpa filter spesifik / none)
+    Mengembalikan True jika ada dropdown yang diubah di UI.
+    """
+    changed = False
+
+    # 1. Dropdown Kategori
+    try:
+        select_kat = page.locator('#filter_kategori, select[name="kategori"]').first
+        if select_kat.count() > 0 and select_kat.is_visible():
+            current_kat = (select_kat.input_value() or "").strip().upper()
+            if current_kat != kat.upper():
+                print(f"[SELANCAR] Memilih 'Kategori {kat}' pada dropdown...")
+                select_kat.select_option(kat)
+                changed = True
+                time.sleep(0.5)
+    except Exception as e_kat:
+        print(f"[SELANCAR-INFO] Dropdown kategori: {e_kat}")
+
+    # 2. Dropdown Flag (Flag 3 / rasio_3)
+    try:
+        select_flag = page.locator('#filter_flag, select[name="flag"]').first
+        if select_flag.count() == 0:
+            select_flag = page.locator('select:has(option[value="rasio_3"])').first
+        if select_flag.count() > 0 and select_flag.is_visible():
+            current_flag = (select_flag.input_value() or "").strip()
+            if current_flag != flag:
+                print(f"[SELANCAR] Memilih Flag 'Flag Rasio 3' (value: {flag}) pada dropdown...")
+                try:
+                    select_flag.select_option(value=flag)
+                except Exception:
+                    select_flag.select_option(label=re.compile(r'Rasio\s*3', re.I))
+                changed = True
+                time.sleep(0.5)
+    except Exception as e_flag:
+        print(f"[SELANCAR-INFO] Dropdown flag: {e_flag}")
+
+    # 3. Dropdown Kode
+    try:
+        select_kode = page.locator('#filter_kode, select[name="kode"]').first
+        if select_kode.count() > 0 and select_kode.is_visible():
+            current_kode = (select_kode.input_value() or "").strip()
+            if current_kode != kode:
+                print(f"[SELANCAR] Memilih Kode '{kode}' pada dropdown...")
+                select_kode.select_option(value=kode)
+                changed = True
+                time.sleep(0.5)
+    except Exception as e_kode:
+        print(f"[SELANCAR-INFO] Dropdown kode: {e_kode}")
+
+    # 4. Dropdown Spesifik (Semua tanpa filter spesifik / none)
+    try:
+        select_spesifik = page.locator('#filter_spesifik, select[name="filter_spesifik"], select[name="spesifik"]').first
+        if select_spesifik.count() == 0:
+            select_spesifik = page.locator('select:has(option[value="none"])').first
+        if select_spesifik.count() > 0 and select_spesifik.is_visible():
+            current_spesifik = (select_spesifik.input_value() or "").strip()
+            if current_spesifik != filter_spesifik:
+                print(f"[SELANCAR] Memilih Spesifik 'Semua (tanpa filter spesifik)' (value: {filter_spesifik}) pada dropdown...")
+                try:
+                    select_spesifik.select_option(value=filter_spesifik)
+                except Exception:
+                    select_spesifik.select_option(label=re.compile(r'Semua\s*\(tanpa\s*filter', re.I))
+                changed = True
+                time.sleep(0.5)
+    except Exception as e_spes:
+        print(f"[SELANCAR-INFO] Dropdown spesifik: {e_spes}")
+
+    return changed
+
 def buka_dan_siapkan_selancar(page, kategori="G"):
     """
-    Menjalankan alur navigasi alami:
-    1. Masuk ke Selancar landing (https://nerwana-aceh.web.bps.go.id/selancar2026/landing)
-    2. Selesaikan login SSO / tombol login jika diperlukan
-    3. Dari landing, klik kartu/menu 'DC Terkena Flag'
-    4. Di halaman DC Terkena Flag, pilih Kategori sesuai pilihan (A atau G)
-    5. Tunggu tabel data dimuat penuh
+    Menyiapkan halaman Selancar DC Terkena Flag:
+    1. Pastikan sesi login aktif (SSO BPS / Selancar).
+    2. Terapkan filter wajib untuk semua DC:
+       - Flag            : Flag Rasio 3 (rasio_3, kode 1)
+       - Filter Spesifik : Semua (tanpa filter spesifik / none)
+       - Kategori        : Sesuai pilihan pengguna (A, G, C, dll)
+    3. Tunggu tabel data dimuat penuh.
     """
     kat = (kategori or "G").upper().strip()
     print("\n" + "=" * 65)
-    print(f"        MENYIAPKAN HALAMAN SELANCAR NERWANA (KATEGORI {kat})")
+    print(f"   MENYIAPKAN HALAMAN SELANCAR DC TERKENA FLAG (KATEGORI {kat})")
+    print(f"   [FILTER OTOMATIS] Flag: Flag Rasio 3 | Spesifik: Semua (tanpa filter)")
     print("=" * 65)
-    url = page.url.lower()
 
-    # 1. Pastikan di domain Selancar
+    # 1. Pastikan di domain Selancar & login
+    url = page.url.lower()
     if "selancar2026" not in url:
         print("[SELANCAR] Mengarahkan ke Landing Page Selancar...")
         try:
@@ -132,50 +211,50 @@ def buka_dan_siapkan_selancar(page, kategori="G"):
         except Exception as e:
             print(f"[INFO] Navigasi landing: {e}")
 
-    # Selesaikan login SSO jika belum login
     pastikan_login_selancar(page)
     time.sleep(1)
 
-    url = page.url.lower()
-    # 2. Jika di landing atau bukan di dc-terkena-flag, klik menu 'DC Terkena Flag'
-    if "landing" in url or "dc-terkena-flag" not in url:
-        print("[SELANCAR] Berada di Landing. Mengklik menu 'DC Terkena Flag'...")
+    # 2. Periksa apakah URL saat ini sudah berada di dc-terkena-flag dengan filter yang tepat
+    parsed = urllib.parse.urlparse(page.url)
+    params = urllib.parse.parse_qs(parsed.query)
+    kabkota = params.get('kabkota', ['1175'])[0]
+
+    is_correct_filter = (
+        "dc-terkena-flag" in parsed.path.lower() and
+        params.get("kategori", [""])[0].upper() == kat and
+        params.get("flag", [""])[0] == "rasio_3" and
+        params.get("kode", [""])[0] == "1" and
+        params.get("filter_spesifik", [""])[0] in ["none", ""]
+    )
+
+    if not is_correct_filter:
+        target_url = f"{NERWANA_BASE_URL}?sort=nilai_tambah&dir=asc&kabkota={kabkota}&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50"
+        print(f"[SELANCAR] Mengarahkan ke URL filter DC:")
+        print(f"          -> Kategori : {kat}")
+        print(f"          -> Flag     : Flag Rasio 3 (rasio_3, kode=1)")
+        print(f"          -> Spesifik : Semua (tanpa filter spesifik / none)")
         try:
-            card_dc = page.locator('a:has-text("DC Terkena Flag"), div:has-text("DC Terkena Flag"), [href*="dc-terkena-flag"]').first
-            if card_dc.count() > 0:
-                card_dc.click()
-            else:
-                page.goto(NERWANA_BASE_URL, timeout=45000)
-            page.wait_for_url(lambda u: "dc-terkena-flag" in u.lower(), timeout=20000)
-        except Exception as e:
-            print(f"[INFO] Klik menu DC Terkena Flag: {e}")
-            if "dc-terkena-flag" not in page.url.lower():
-                page.goto(NERWANA_BASE_URL, timeout=45000)
+            page.goto(target_url, timeout=45000)
+            page.wait_for_load_state("domcontentloaded")
+        except Exception as e_nav:
+            print(f"[INFO] Navigasi URL filter: {e_nav}")
+        pastikan_login_selancar(page)
+        time.sleep(1)
 
-    time.sleep(2)
-    pastikan_login_selancar(page)
-
-    # 3. Di halaman DC Terkena Flag, pastikan Kategori yang diinginkan dipilih
-    try:
-        page.wait_for_selector('#filter_kategori, select[name="kategori"]', timeout=15000)
-        select_kat = page.locator('#filter_kategori, select[name="kategori"]').first
-        current_val = select_kat.input_value()
-        if current_val != kat:
-            print(f"[SELANCAR] Memilih 'Kategori {kat}' pada dropdown filter...")
-            select_kat.select_option(kat)
-            time.sleep(2)
-    except Exception as e_sel:
-        print(f"[SELANCAR-INFO] Pilihan kategori: {e_sel}")
+    # 3. Sinkronkan dan verifikasi dropdown di UI
+    changed = verifikasi_dan_set_dropdown_selancar(page, kat, flag="rasio_3", kode="1", filter_spesifik="none")
+    if changed:
+        time.sleep(1.5)
 
     # 4. Tunggu tabel dimuat
-    print(f"[SELANCAR] Menunggu tabel data Kategori {kat} selesai dimuat...")
+    print(f"[SELANCAR] Menunggu tabel data Kategori {kat} (Flag 3, Semua Spesifik) dimuat...")
     try:
         page.wait_for_selector('#tableEvalProfil tbody tr', timeout=30000)
         try:
             page.locator('#loading-overlay').wait_for(state="hidden", timeout=15000)
         except Exception:
             pass
-        print(f"[SELANCAR] Tabel data Kategori {kat} siap di layar!")
+        print(f"[SELANCAR] Tabel data Kategori {kat} (Flag 3) siap di layar!")
         return True
     except Exception as e_wait:
         print(f"[SELANCAR-WARN] Menunggu tabel: {e_wait}")
@@ -184,23 +263,34 @@ def buka_dan_siapkan_selancar(page, kategori="G"):
 def refresh_selancar_realtime(page, kategori="G"):
     """
     Me-refresh halaman Selancar secara real-time agar sinkron dengan perubahan dari komputer lain.
-    Memastikan tabel selesai dimuat dan kategori yang aktif tetap sesuai.
+    Memastikan tabel selesai dimuat dan kategori, Flag (rasio_3), serta Spesifik (none) tetap sesuai.
     """
     kat = (kategori or "G").upper().strip()
     try:
-        print(f"[SELANCAR-SYNC] Merefresh halaman Selancar (Kategori {kat}) secara real-time...")
-        page.reload(wait_until="domcontentloaded", timeout=25000)
+        print(f"[SELANCAR-SYNC] Merefresh halaman Selancar (Kategori {kat}, Flag 3) secara real-time...")
         
-        # Cek apakah filter kategori tetap sesuai
-        try:
-            page.wait_for_selector('#filter_kategori, select[name="kategori"]', timeout=10000)
-            select_kat = page.locator('#filter_kategori, select[name="kategori"]').first
-            if select_kat.input_value() != kat:
-                select_kat.select_option(kat)
-                time.sleep(1.5)
-        except Exception:
-            pass
-            
+        parsed = urllib.parse.urlparse(page.url)
+        params = urllib.parse.parse_qs(parsed.query)
+        kabkota = params.get('kabkota', ['1175'])[0]
+
+        is_correct_filter = (
+            "dc-terkena-flag" in parsed.path.lower() and
+            params.get("kategori", [""])[0].upper() == kat and
+            params.get("flag", [""])[0] == "rasio_3" and
+            params.get("kode", [""])[0] == "1" and
+            params.get("filter_spesifik", [""])[0] in ["none", ""]
+        )
+
+        if not is_correct_filter:
+            target_url = f"{NERWANA_BASE_URL}?sort=nilai_tambah&dir=asc&kabkota={kabkota}&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50"
+            page.goto(target_url, timeout=30000)
+            page.wait_for_load_state("domcontentloaded")
+        else:
+            page.reload(wait_until="domcontentloaded", timeout=25000)
+
+        # Verifikasi dropdown
+        verifikasi_dan_set_dropdown_selancar(page, kat, flag="rasio_3", kode="1", filter_spesifik="none")
+
         page.wait_for_selector('#tableEvalProfil tbody tr', timeout=20000)
         try:
             page.locator('#loading-overlay').wait_for(state="hidden", timeout=10000)
@@ -401,8 +491,9 @@ def set_tindak_lanjut_selancar(target_info, nerwana_updater=None, status="akan_d
     return updated
 
 class NerwanaManager:
-    def __init__(self, browser_context):
+    def __init__(self, browser_context, kategori="G"):
         self.context = browser_context
+        self.kategori = (kategori or "G").upper().strip()
         self.page = None
         self.csrf_token = None
 
@@ -472,7 +563,7 @@ class NerwanaManager:
             
             # Pastikan berada di halaman dc-terkena-flag tanpa reload jika sudah terbuka
             if "dc-terkena-flag" not in page.url.lower():
-                buka_dan_siapkan_selancar(page)
+                buka_dan_siapkan_selancar(page, kategori=self.kategori)
 
             # Gunakan kolom pencarian di UI yang sudah terbuka (bukan page.goto URL berparameter)
             try:

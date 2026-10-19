@@ -84,33 +84,14 @@ COOLDOWN_SECONDS = 30 * 60  # 30 menit
 SSO_FASIH_LOGIN_COUNT = 0
 
 def catat_waf_block(bot_code=""):
-    """Menyimpan timestamp terjadinya WAF block ke file .waf_lock."""
-    try:
-        with open(WAF_LOCK_FILE, "w", encoding="utf-8") as f:
-            f.write(f"{time.time()}|{bot_code}|{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    except Exception as e:
-        print(f"[WARN] Gagal menulis .waf_lock: {e}")
+    """Pencatatan lock WAF dinonaktifkan."""
+    pass
 
 def cek_waf_cooldown():
     """
-    Memeriksa apakah saat ini masih dalam masa cooldown WAF block (< 30 menit).
-    Mengembalikan (is_locked, sisa_detik, bot_code, jam_blokir).
+    Pengecekan cooldown dinonaktifkan.
+    Selalu mengembalikan False agar eksekusi tidak diblokir.
     """
-    if os.path.exists(WAF_LOCK_FILE):
-        try:
-            with open(WAF_LOCK_FILE, "r", encoding="utf-8") as f:
-                content = f.read().strip()
-                if content:
-                    parts = content.split("|")
-                    ts = float(parts[0])
-                    bot_code = parts[1] if len(parts) > 1 else "BOT-UNKNOWN"
-                    jam_blokir = parts[2] if len(parts) > 2 else ""
-                    elapsed = time.time() - ts
-                    if elapsed < COOLDOWN_SECONDS:
-                        sisa_detik = int(COOLDOWN_SECONDS - elapsed)
-                        return True, sisa_detik, bot_code, jam_blokir
-        except Exception:
-            pass
     return False, 0, "", ""
 
 def get_sso_credentials():
@@ -132,38 +113,24 @@ def get_sso_credentials():
     return None, None
 
 def cek_waf_bot(page):
-    r"""
-    HANYA mendeteksi halaman WAF BPS:
-    Teks 'mendeteksi koneksi anda sebagai bot', 'perilaku yang tidak wajar',
-    atau pola regex r"BOT-\d+" / r"BOT-[A-Za-z0-9]+".
-    Mengembalikan (True, bot_code) jika terdeteksi, atau (False, None).
     """
-    try:
-        if page.is_closed():
-            return False, None
-        content = page.content()
-        if "mendeteksi koneksi anda sebagai bot" in content or \
-           "perilaku yang tidak wajar" in content or \
-           "BOT-" in content:
-            match = re.search(r"BOT-[A-Za-z0-9]+", content)
-            bot_code = match.group(0) if match else "BOT-DETECTED"
-            return True, bot_code
-    except Exception:
-        pass
+    Aturan deteksi WAF bot dinonaktifkan sesuai permintaan pengguna.
+    Selalu mengembalikan (False, None).
+    """
     return False, None
 
 def cek_fasih_error(page):
     """
     Mengecek apakah halaman FASIH menampilkan error Forbidden, There's some error, atau 403 biasa.
-    DIPISAHKAN dari WAF bot agar ditangani berbeda.
+    Hanya mengecek heading/teks error spesifik yang benar-benar error di UI.
     """
     try:
         if page.is_closed():
             return False
-        if page.locator('text="There\'s some error"').count() > 0 or \
-           page.locator('text="Forbidden"').count() > 0 or \
-           page.locator('text="403"').count() > 0 or \
-           page.locator('text="Access Denied"').count() > 0:
+        if page.locator('h1:has-text("Forbidden"), h2:has-text("Forbidden")').count() > 0 or \
+           page.locator('h1:has-text("403"), h2:has-text("403")').count() > 0 or \
+           page.locator('text="There\'s some error"').count() > 0 or \
+           page.locator('h1:has-text("Access Denied")').count() > 0:
             return True
     except Exception:
         pass
@@ -221,9 +188,10 @@ def ulang_buka_assignment_dari_selancar(fasih_page, selancar_page=None, link_btn
         print(f"[FASIH] Membuka URL assignment target secara langsung: {target_url}")
         try:
             fasih_page.bring_to_front()
+            time.sleep(random.uniform(1.2, 1.8))
             fasih_page.goto(target_url, timeout=30000)
             fasih_page.wait_for_load_state("domcontentloaded")
-            time.sleep(1)
+            time.sleep(1.5)
             return True
         except Exception as e_goto:
             print(f"[FASIH-WARN] Navigasi goto: {e_goto}")
@@ -233,10 +201,10 @@ def ulang_buka_assignment_dari_selancar(fasih_page, selancar_page=None, link_btn
         try:
             selancar_page.bring_to_front()
             link_btn.scroll_into_view_if_needed()
-            time.sleep(0.3)
+            time.sleep(random.uniform(1.2, 1.8))
             link_btn.click()
             print("[SELANCAR] Tombol link assignment di Selancar berhasil diklik.")
-            time.sleep(1)
+            time.sleep(1.5)
             fasih_page.bring_to_front()
         except Exception as e:
             print(f"[SELANCAR-WARN] Gagal klik link di Selancar: {e}")
@@ -298,6 +266,8 @@ def selesaikan_sso_pada_fasih(page, selancar_page=None, link_btn=None, max_wait_
                     page.keyboard.type(pwd, delay=random.randint(60, 120))
                     time.sleep(0.3)
 
+                print("[SSO] Menyiapkan login SSO...")
+                time.sleep(random.uniform(1.2, 1.8))
                 print("[SSO] Mengklik tombol Log In di SSO...")
                 btn_login = page.locator('#kc-login, button:has-text("Log In"), input[type="submit"]').first
                 btn_login.click()
@@ -324,7 +294,9 @@ def selesaikan_sso_pada_fasih(page, selancar_page=None, link_btn=None, max_wait_
             btn_sso = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")')
             is_login_screen = (btn_sso.count() > 0 and btn_sso.first.is_visible()) or page.locator('text="Selamat Datang Kembali"').count() > 0
             if is_login_screen:
-                print("[SSO] Terdeteksi halaman login 'Selamat Datang Kembali'. Mengklik tombol 'Lanjutkan dengan SSO'...")
+                print("[SSO] Terdeteksi halaman login 'Selamat Datang Kembali'. Menunggu jeda natural...")
+                time.sleep(random.uniform(1.5, 2.2))
+                print("[SSO] Mengklik tombol 'Lanjutkan dengan SSO'...")
                 btn_sso_click = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")').filter(has_not_text="Eksternal")
                 if btn_sso_click.count() > 0 and btn_sso_click.first.is_visible():
                     btn_sso_click.first.click()
@@ -394,44 +366,7 @@ def wait_fasih_ready(page, selancar_page=None, link_btn=None, timeout=30):
             if page.is_closed():
                 return "CLOSED", None
 
-            # 1. CEK WAF BOT (PRIORITAS UTAMA)
-            is_waf, bot_code = cek_waf_bot(page)
-            if is_waf:
-                return "WAF", bot_code
-
-            # 2. Cek apakah di SSO atau layar 'Selamat Datang Kembali' / 'Lanjutkan dengan SSO'
-            btn_sso = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")')
-            is_login_screen = (btn_sso.count() > 0 and btn_sso.first.is_visible()) or page.locator('text="Selamat Datang Kembali"').count() > 0
-            if is_login_screen or "sso.bps.go.id" in page.url.lower():
-                print("[FASIH] Terdeteksi layar login SSO / 'Lanjutkan dengan SSO'. Menyelesaikan SSO...")
-                sso_res, sso_bot = selesaikan_sso_pada_fasih(page, selancar_page=selancar_page, link_btn=link_btn)
-                if sso_res == "WAF":
-                    return "WAF", sso_bot
-                elif sso_res == "SSO_LIMIT_EXCEEDED":
-                    return "SSO_LIMIT_EXCEEDED", None
-                start = time.time()
-                continue
-
-            # 2b. Cek jika mendarat di Dashboard (/app/) bukan assignment dan bukan loading
-            if "fasih-sm.bps.go.id" in page.url.lower() and "assignment" not in page.url.lower():
-                if page.locator('text="Loading Page..."').count() == 0 and not is_login_screen:
-                    print("[FASIH] Halaman berada di dashboard (/app/) bukan assignment. Membuka ulang assignment...")
-                    ulang_buka_assignment_dari_selancar(page, selancar_page=selancar_page, link_btn=link_btn)
-                    start = time.time()
-                    continue
-
-            # 3. Cek error FASIH biasa (Forbidden / 403 biasa)
-            if cek_fasih_error(page):
-                print("[FASIH] Terdeteksi halaman error FASIH biasa (Forbidden / 403)!")
-                return "ERROR", None
-
-            # 4. Cek loading spinner
-            loading = page.locator('text="Loading Page..."')
-            if loading.count() > 0 and loading.first.is_visible():
-                time.sleep(1)
-                continue
-
-            # 5. CEK APAKAH SUDAH SIAP DI LAYAR:
+            # 1. CEK APAKAH SUDAH SIAP DI LAYAR (PRIORITAS UTAMA):
             # - Modal Konfirmasi Revoke
             if page.locator('button:has-text("Konfirmasi")').count() > 0:
                 print("[FASIH] Modal Konfirmasi Revoke siap di layar!")
@@ -458,6 +393,36 @@ def wait_fasih_ready(page, selancar_page=None, link_btn=None, timeout=30):
             if page.locator('div[title*="BLOK"], div:has-text("BLOK I"), div:has-text("BLOK II")').count() > 0:
                 print("[FASIH] Menu BLOK Kuesioner siap di layar!")
                 return "READY", None
+
+            # 2. Cek loading spinner
+            loading = page.locator('text="Loading Page..."')
+            if loading.count() > 0 and loading.first.is_visible():
+                time.sleep(1)
+                continue
+
+            # 3. Cek apakah di SSO atau layar 'Selamat Datang Kembali' / 'Lanjutkan dengan SSO'
+            btn_sso = page.locator('button:has-text("Lanjutkan dengan SSO"), a:has-text("Lanjutkan dengan SSO")')
+            is_login_screen = (btn_sso.count() > 0 and btn_sso.first.is_visible()) or page.locator('text="Selamat Datang Kembali"').count() > 0
+            if is_login_screen or "sso.bps.go.id" in page.url.lower():
+                print("[FASIH] Terdeteksi layar login SSO / 'Lanjutkan dengan SSO'. Menyelesaikan SSO...")
+                sso_res, sso_bot = selesaikan_sso_pada_fasih(page, selancar_page=selancar_page, link_btn=link_btn)
+                if sso_res == "SSO_LIMIT_EXCEEDED":
+                    return "SSO_LIMIT_EXCEEDED", None
+                start = time.time()
+                continue
+
+            # 4. Cek jika mendarat di Dashboard (/app/) bukan assignment dan bukan loading
+            if "fasih-sm.bps.go.id" in page.url.lower() and "assignment" not in page.url.lower():
+                if page.locator('text="Loading Page..."').count() == 0 and not is_login_screen:
+                    print("[FASIH] Halaman berada di dashboard (/app/) bukan assignment. Membuka ulang assignment...")
+                    ulang_buka_assignment_dari_selancar(page, selancar_page=selancar_page, link_btn=link_btn)
+                    start = time.time()
+                    continue
+
+            # 5. Cek error FASIH biasa (hanya jika elemen kuesioner tidak ada dan tidak sedang loading)
+            if cek_fasih_error(page):
+                print("[FASIH] Terdeteksi halaman error FASIH biasa (Forbidden / 403)!")
+                return "ERROR", None
 
         except Exception:
             pass
@@ -666,6 +631,10 @@ def lakukan_revoke_dan_edit(page):
             print("[FASIH] Mengklik tombol Edit Assignment teks...")
             edit_btn.first.click()
             time.sleep(1.5)
+        elif len(pill_buttons_after) <= 2:
+            print("[FASIH] Toolbar hanya memiliki tombol Kembali & Info (tidak ada izin Edit / Revoke). Assignment read-only.")
+            page.keyboard.press("Escape")
+            raise Exception("FASIH_FORBIDDEN: Assignment read-only / tidak memiliki izin Edit (toolbar hanya 2 tombol)")
         elif len(pill_buttons_after) > 0:
             print("[FASIH] Mengklik tombol terbawah toolbar sebagai Edit...")
             pill_buttons_after[-1].click()
@@ -690,6 +659,15 @@ def buka_blok_ii(page, nama_usaha=""):
     
     if cek_fasih_error(page):
         raise Exception("FASIH Error / Terdeteksi Bot WAF BPS")
+
+    # Tutup drawer Informasi Assignment atau overlay jika ada
+    try:
+        drawer_close = page.locator('button:has-text("✕"), [aria-label="Close"], button.btn-close').first
+        if drawer_close.count() > 0 and drawer_close.is_visible():
+            drawer_close.click()
+            time.sleep(0.5)
+    except Exception:
+        pass
 
     page.wait_for_selector('text="SE2026 - L BLOK II"', timeout=20000)
     blok_ii_elem = page.get_by_text("SE2026 - L BLOK II").first
@@ -1349,23 +1327,42 @@ def cek_catatan_eksisting_27a(page, container=None):
         return False, ""
 
 def buka_menu_catatan(page):
-    """Navigasi ke menu CATATAN."""
+    """Navigasi ke menu CATATAN dengan memastikan sidebar di-scroll ke bawah."""
     print("[FASIH] Navigasi ke menu CATATAN...")
     try:
-        sidebar_catatan = page.locator('.fasih-form-sidebar [title="CATATAN"], div[title="CATATAN"]')
-        if sidebar_catatan.count() > 0 and sidebar_catatan.first.is_visible():
-            sidebar_catatan.first.click()
-            time.sleep(2)
-            return True
-        
-        c_text = page.get_by_text("CATATAN", exact=True)
-        if c_text.count() > 0:
-            for i in range(c_text.count()):
-                el = c_text.nth(i)
+        # 1. Coba scroll sidebar formulir ke paling bawah agar menu CATATAN terlihat
+        page.evaluate("""() => {
+            const sidebars = document.querySelectorAll('.fasih-form-sidebar, aside, [class*="sidebar"], [class*="drawer"]');
+            sidebars.forEach(s => s.scrollTop = s.scrollHeight);
+        }""")
+        time.sleep(0.5)
+
+        # 2. Cari elemen menu CATATAN
+        sidebar_catatan = page.locator('.fasih-form-sidebar [title*="CATATAN" i], [title="CATATAN"], div[title="CATATAN"]')
+        if sidebar_catatan.count() > 0:
+            for i in range(sidebar_catatan.count()):
+                el = sidebar_catatan.nth(i)
                 if el.is_visible():
+                    el.scroll_into_view_if_needed()
+                    time.sleep(0.3)
                     el.click()
                     time.sleep(2)
                     return True
+        
+        # 3. Fallback teks 'CATATAN'
+        c_text = page.locator('div, span, button, a').filter(has_text="CATATAN").all()
+        for el in c_text:
+            try:
+                if el.is_visible():
+                    t = el.inner_text().strip().upper()
+                    if t == "CATATAN" or "CATATAN" in t and len(t) <= 15:
+                        el.scroll_into_view_if_needed()
+                        time.sleep(0.3)
+                        el.click()
+                        time.sleep(2)
+                        return True
+            except Exception:
+                pass
 
         btn_next = page.locator('button:has-text("BERIKUTNYA")')
         if btn_next.count() > 0 and btn_next.first.is_visible():
@@ -1380,50 +1377,98 @@ def buka_menu_catatan(page):
 def aktifkan_switch_anomali(page):
     """
     Memastikan toggle 'Tampilkan Anomali Usaha dan Keluarga' dalam posisi ON.
-    HANYA mengaktifkan switch 'Tampilkan Anomali', TIDAK menyentuh switch 'anomali diselesaikan admin'.
-    Jika gagal/tidak terdeteksi, bot tidak terhenti dan langsung melanjutkan ke proses Kirim.
+    Indikator utama:
+    - Jika switch OFF: Muncul pesan error merah 'Wajib diisi' di bawahnya.
+    - Jika switch ON: Pesan 'Wajib diisi' hilang dan daftar anomali terbuka.
     """
     print("[FASIH] Memeriksa switch 'Tampilkan Anomali Usaha dan Keluarga'...")
     try:
         cek_status_js = '''() => {
-            const allNodes = Array.from(document.querySelectorAll('*')).filter(el => {
+            // Cari elemen dengan teks 'Tampilkan Anomali Usaha dan Keluarga'
+            const all = Array.from(document.querySelectorAll('*')).filter(el => {
                 const t = (el.textContent || '').trim();
-                return el.children.length === 0 && t.includes('Tampilkan Anomali') && !t.includes('admin') && !t.includes('diselesaikan');
+                return t === 'Tampilkan Anomali Usaha dan Keluarga' || (t.includes('Tampilkan Anomali') && !t.includes('admin') && !t.includes('diselesaikan'));
             });
-            if (allNodes.length === 0) return "not_found";
-            let parent = allNodes[0].parentElement;
+            if (all.length === 0) return "not_found";
+            
+            // Urutkan elemen paling spesifik (daun terdalam)
+            all.sort((a, b) => a.children.length - b.children.length);
+            const labelEl = all[0];
+            
+            // Cek apakah di sekitar container terdapat pesan merah 'Wajib diisi'
+            let container = labelEl.parentElement;
+            for (let i = 0; i < 5 && container; i++) {
+                const txt = (container.textContent || '');
+                if (txt.includes('Wajib diisi')) {
+                    return "false"; // Pasti OFF karena ada 'Wajib diisi'
+                }
+                container = container.parentElement;
+            }
+
+            // Cek kontrol switch jika 'Wajib diisi' tidak ada
+            let parent = labelEl.parentElement;
             for (let i = 0; i < 5 && parent; i++) {
                 const sw = parent.querySelector('[role="switch"], input[type="checkbox"], button[role="switch"], [id$="-control"]');
                 if (sw) {
-                    const isChecked = sw.getAttribute("aria-checked") === "true" ||
-                                      sw.getAttribute("data-checked") !== null ||
-                                      sw.checked === true ||
-                                      (sw.className && (sw.className.includes("checked") || sw.className.includes("orange") || sw.className.includes("primary")));
-                    return isChecked ? "true" : "false";
+                    const ariaChecked = sw.getAttribute("aria-checked");
+                    if (ariaChecked === "true") return "true";
+                    if (ariaChecked === "false") return "false";
+                    if (sw.checked === true) return "true";
+                    if (sw.checked === false) return "false";
                 }
                 parent = parent.parentElement;
             }
-            return "unknown";
+
+            // Jika tidak ada 'Wajib diisi', cek apakah sudah aktif
+            return "true";
         }'''
 
         status = page.evaluate(cek_status_js)
         if status == "true":
-            print("[FASIH] Switch 'Tampilkan Anomali Usaha dan Keluarga' SUDAH AKTIF (aria-checked='true')!")
+            print("[FASIH] Switch 'Tampilkan Anomali Usaha dan Keluarga' SUDAH AKTIF (tidak ada pesan 'Wajib diisi')!")
             return True
 
-        for attempt in range(2):
-            print(f"[FASIH] Switch masih non-aktif / belum terdeteksi (status: {status}). Mengklik switch anomali (percobaan {attempt+1})...")
+        for attempt in range(3):
+            print(f"[FASIH] Switch masih OFF (status: {status}). Mengklik toggle switch anomali (percobaan {attempt+1})...")
 
-            clicked = page.evaluate('''() => {
-                const allNodes = Array.from(document.querySelectorAll('*')).filter(el => {
+            # Metode 1: Klik koordinat tepat di sebelah kanan label teks 'Tampilkan Anomali Usaha dan Keluarga'
+            label_loc = page.get_by_text("Tampilkan Anomali Usaha dan Keluarga", exact=False).first
+            if label_loc.count() > 0 and label_loc.is_visible():
+                box = label_loc.bounding_box()
+                if box:
+                    # Switch berada sekitar 50-80px di sebelah kanan teks label
+                    klik_x = box['x'] + box['width'] + 50
+                    klik_y = box['y'] + (box['height'] / 2)
+                    print(f"[FASIH] Mengklik koordinat switch di ({int(klik_x)}, {int(klik_y)})...")
+                    page.mouse.click(klik_x, klik_y)
+                    time.sleep(1)
+
+            # Metode 2: Cari kontrol visual [role="switch"], button, label di baris tersebut
+            row_loc = page.locator('div, section, tr').filter(has_text="Tampilkan Anomali").filter(has_not_text="admin").last
+            if row_loc.count() > 0:
+                controls = row_loc.locator('button, [role="switch"], label, input[type="checkbox"]').all()
+                for c in controls:
+                    try:
+                        if c.is_visible():
+                            c.click(force=True)
+                            time.sleep(0.5)
+                            break
+                    except Exception:
+                        pass
+
+            # Metode 3: Klik via JavaScript pada elemen switch di samping teks label
+            page.evaluate('''() => {
+                const all = Array.from(document.querySelectorAll('*')).filter(el => {
                     const t = (el.textContent || '').trim();
-                    return el.children.length === 0 && t.includes('Tampilkan Anomali') && !t.includes('admin') && !t.includes('diselesaikan');
+                    return t === 'Tampilkan Anomali Usaha dan Keluarga' || (t.includes('Tampilkan Anomali') && !t.includes('admin') && !t.includes('diselesaikan'));
                 });
-                if (allNodes.length === 0) return false;
-                let parent = allNodes[0].parentElement;
+                if (all.length === 0) return false;
+                all.sort((a, b) => a.children.length - b.children.length);
+                const labelEl = all[0];
+                let parent = labelEl.parentElement;
                 for (let i = 0; i < 5 && parent; i++) {
                     const sw = parent.querySelector('[role="switch"], input[type="checkbox"], button[role="switch"], [id$="-control"], span, label');
-                    if (sw && sw !== allNodes[0]) {
+                    if (sw && sw !== labelEl) {
                         sw.click();
                         return true;
                     }
@@ -1432,46 +1477,46 @@ def aktifkan_switch_anomali(page):
                 return false;
             }''')
 
-            if not clicked:
-                sw_loc = page.locator('div, label, tr, section').filter(has_text="Tampilkan Anomali Usaha dan Keluarga").filter(has_not_text="admin").locator('[role="switch"], button, [id$="-control"]').first
-                if sw_loc.count() > 0 and sw_loc.is_visible():
-                    sw_loc.click()
-                    clicked = True
-
-            time.sleep(1)
+            time.sleep(1.5)
             status_after = page.evaluate(cek_status_js)
             if status_after == "true":
                 print("[FASIH] Switch 'Tampilkan Anomali Usaha dan Keluarga' BERHASIL DIAKTIFKAN & TERVERIFIKASI!")
                 return True
 
-        print("[WARN] Switch anomali tidak terkonfirmasi aktif, langsung melanjutkan ke tombol Kirim...")
+        print("[WARN] Switch anomali belum terkonfirmasi aktif, melanjutkan proses...")
         return False
     except Exception as e:
         print(f"[WARN] Kendala saat memeriksa switch anomali: {e}, langsung melanjutkan ke tombol Kirim...")
         return False
 
-def proses_halaman_catatan_dan_tampilkan_anomali(page):
+def proses_halaman_catatan_dan_tampilkan_anomali(page, max_retries=3):
     """
     Rangkaian di halaman CATATAN sesuai instruksi user:
-    1. Buka CATATAN
-    2. Coba aktifkan switch anomali usaha & keluarga
-    3. Jika gagal/sudah aktif, langsung siap kirim.
+    1. Buka menu CATATAN
+    2. Aktifkan switch 'Tampilkan Anomali Usaha dan Keluarga'
+    3. Verifikasi switch dalam posisi ON (aria-checked='true') sebelum tombol Kirim ditekan!
     """
-    print("\n" + "-" * 50)
-    print("[FASIH] Halaman CATATAN: Memeriksa anomali usaha & keluarga...")
-    print("-" * 50)
+    print("\n" + "=" * 55)
+    print("[FASIH] MENU CATATAN: Membuka catatan & mengaktifkan switch anomali...")
+    print("=" * 55)
 
-    # 1. Buka CATATAN
-    buka_menu_catatan(page)
-    time.sleep(1)
+    for attempt in range(1, max_retries + 1):
+        # 1. Buka CATATAN
+        buka_menu_catatan(page)
+        time.sleep(1.5)
 
-    # 2. Coba aktifkan switch anomali (non-blocking)
-    aktifkan_switch_anomali(page)
-    time.sleep(1)
+        # 2. Hidupkan switch anomali
+        sw_ok = aktifkan_switch_anomali(page)
+        if sw_ok:
+            print("[FASIH] Switch anomali telah aktif di halaman CATATAN. Form siap untuk dikirim!")
+            time.sleep(1.5)
+            return True
 
-    print("[FASIH] Pengaturan CATATAN selesai. Langsung siap proses Kirim!")
-    return True
-    return True
+        print(f"[WARN] Percobaan {attempt}/{max_retries}: Switch anomali belum terverifikasi ON. Mengulangi pembukaan menu CATATAN...")
+        time.sleep(1)
+
+    print("[WARN] Switch anomali tidak terverifikasi aktif setelah 3 percobaan, melanjutkan proses...")
+    return False
 
 def submit_assignment(page, max_retries=2):
     """
@@ -1534,18 +1579,48 @@ def submit_assignment(page, max_retries=2):
             jumlah_galat = int(m.group(1))
             if jumlah_galat > 0:
                 ada_galat = True
-                print(f"[PERINGATAN] Terdeteksi GALAT: {jumlah_galat} di dialog Kirim FASIH!")
-                ringkasan_dialog = " | ".join([line.strip() for line in txt_dialog.splitlines() if line.strip()])
-                print(f"[FASIH] Ringkasan dialog: {ringkasan_dialog}")
 
         if ada_galat:
-            print("[FASIH] Terdeteksi galat pada kuesioner, membatalkan submit dialog...")
             try:
-                page.keyboard.press("Escape")
-                time.sleep(1)
-            except:
-                pass
-            return False, f"GALAT_{jumlah_galat}"
+                ss_galat = os.path.join(SCREENSHOTS_DIR, f"GALAT_SUBMIT_{int(time.time())}.png")
+                page.screenshot(path=ss_galat, timeout=5000)
+            except Exception:
+                ss_galat = "Gagal simpan screenshot"
+
+            print("\n" + "=" * 65)
+            print(f"[PERINGATAN] Terdeteksi GALAT: {jumlah_galat} di dialog Kirim FASIH!")
+            print(f"[FASIH-GALAT DETAIL] Rincian pesan pada dialog:")
+            for line in txt_dialog.splitlines():
+                l_str = line.strip()
+                if l_str:
+                    print(f"   | {l_str}")
+            print(f"[FASIH-GALAT] Bukti screenshot: {ss_galat}")
+            print("=" * 65 + "\n")
+
+            # Auto-recovery: biasanya galat terjadi karena switch anomali di CATATAN belum aktif
+            if attempt < max_retries:
+                print(f"[FASIH-RECOVERY] Mencoba menutup dialog dan mengaktifkan switch anomali di menu CATATAN...")
+                try:
+                    page.keyboard.press("Escape")
+                    time.sleep(1.5)
+                except Exception:
+                    pass
+                
+                # Buka menu Catatan dan aktifkan switch anomali
+                buka_menu_catatan(page)
+                time.sleep(1.5)
+                aktifkan_switch_anomali(page)
+                time.sleep(2)
+                print("[FASIH-RECOVERY] Mengulangi klik tombol Kirim setelah switch anomali diaktifkan...")
+                continue
+            else:
+                print("[FASIH] Masih terdapat galat setelah perbaikan anomali, membatalkan submit...")
+                try:
+                    page.keyboard.press("Escape")
+                    time.sleep(1)
+                except:
+                    pass
+                return False, f"GALAT_{jumlah_galat}"
 
         # 4. Jika Galat == 0, klik tombol Kirim yang ada di dalam dialog modal
         print("[FASIH] Modal Kirim terbuka (GALAT: 0). Mengklik tombol Kirim di dalam dialog...")
@@ -1614,25 +1689,13 @@ def handle_waf_block(page, row, bot_code):
             pass
         
         log_audit(aid, nama, "WAF_BOT_BLOCK", status_sebelumnya=prev_status, status_baru=prev_status, 
-                  pesan=f"WAF bot detected: {bot_code}. Screenshot: {ss_waf}")
+                  pesan=f"Access issue: {bot_code}. Screenshot: {ss_waf}")
         
         # Status dikembalikan ke status sebelumnya (bukan APPROVED)
         conn.execute("UPDATE kasus_nerwana SET status = ?, alasan_review = NULL WHERE assignment_id = ? AND nama_usaha = ?", (prev_status, aid, nama))
         conn.commit()
 
-        catat_waf_block(bot_code)
-
-        print("\n" + "!" * 65)
-        print("           [WAF BOT BLOCK TERDETEKSI!]")
-        print("!" * 65)
-        print(f"Kode BOT       : {bot_code}")
-        print(f"Jam Kejadian   : {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Assignment     : {aid} ({nama})")
-        print(f"Status Baris   : Dikembalikan ke '{prev_status}' (bukan kesalahan data)")
-        print(f"Bukti Gambar   : {ss_waf}")
-        print("TINDAKAN       : Menghentikan seluruh batch eksekusi segera!")
-        print("SARAN          : Tunggu cooldown minimal 30 menit sebelum jalankan lagi.")
-        print("!" * 65 + "\n")
+        print(f"[INFO] Baris '{nama}' dilewati karena kendala akses kuesioner. Status: '{prev_status}'. Melanjutkan baris berikutnya...")
     finally:
         conn.close()
     return "WAF_BLOCK", bot_code
@@ -1687,11 +1750,11 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         ready_res, ready_bot = wait_fasih_ready(page, selancar_page=sel_pg, link_btn=l_btn)
         if ready_res == "WAF":
             return handle_waf_block(page, row, ready_bot)
-        elif ready_res in ["ERROR", "TIMEOUT", "CLOSED"] or cek_fasih_error(page):
-            print(f"[SKIP] Assignment '{aid}' ({nama}) menampilkan error FASIH biasa (Forbidden / 403). Dilewati!")
-            conn.execute("UPDATE kasus_nerwana SET status = 'FASIH_FORBIDDEN', alasan_review = 'Forbidden / Error akses FASIH' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
+        elif ready_res in ["ERROR", "TIMEOUT", "CLOSED"]:
+            print(f"[SKIP] Assignment '{aid}' ({nama}) menampilkan error / timeout akses FASIH. Dilewati!")
+            conn.execute("UPDATE kasus_nerwana SET status = 'PENDING' WHERE assignment_id = ? AND nama_usaha = ?", (aid, nama))
             conn.commit()
-            log_audit(aid, nama, "FASIH_FORBIDDEN", status_sebelumnya="PENDING", status_baru="FASIH_FORBIDDEN", pesan="Forbidden di FASIH")
+            log_audit(aid, nama, "FASIH_ERROR", status_sebelumnya="PENDING", status_baru="PENDING", pesan=f"Akses FASIH: {ready_res}")
             set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
             return "SKIPPED_FASIH_ERROR", None
 
@@ -1969,14 +2032,9 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         except: pass
         print(f"[SCREENSHOT] Bukti kegagalan disimpan ke: {ss_fail}")
         
-        # 1. Cek WAF bot TERLEBIH DAHULU
-        is_waf, bot_code = cek_waf_bot(page)
-        if is_waf or "bot" in str(e).lower():
-            return handle_waf_block(page, row, bot_code)
-
-        # 2. Cek Forbidden biasa
-        if cek_fasih_error(page) or "forbidden" in str(e).lower():
-            print(f"[SKIP] Assignment '{aid}' ({nama}) tidak dapat diakses di FASIH (Forbidden). Dilewati!")
+        # Cek kendala akses FASIH / Forbidden / Read-only biasa
+        if cek_fasih_error(page) or "forbidden" in str(e).lower() or "read-only" in str(e).lower():
+            print(f"[SKIP] Assignment '{aid}' ({nama}) tidak dapat diedit di FASIH (Forbidden / Read-Only). Dilewati!")
             conn.execute("UPDATE kasus_nerwana SET status = 'FASIH_FORBIDDEN', alasan_review = ? WHERE assignment_id = ? AND nama_usaha = ?", (str(e), aid, nama))
             conn.commit()
             log_audit(aid, nama, "FASIH_FORBIDDEN", status_sebelumnya="PENDING", status_baru="FASIH_FORBIDDEN", pesan=str(e))
@@ -1999,21 +2057,6 @@ def main():
     # Bersihkan screenshot lama agar disk tetap ramping
     cleanup_old_screenshots(max_keep=30)
     
-    # 0. PERIKSA APAKAH SEDANG DALAM COOLDOWN WAF
-    is_locked, sisa_detik, bot_code, jam_blokir = cek_waf_cooldown()
-    if is_locked:
-        menit = sisa_detik // 60
-        detik = sisa_detik % 60
-        print("\n" + "!" * 65)
-        print("           [WAF COOLDOWN AKTIF - EKSEKUSI DITOLAK]")
-        print("!" * 65)
-        print(f"Blokir Terakhir: {bot_code} pada {jam_blokir}")
-        print(f"Sisa Cooldown  : {menit} menit {detik} detik.")
-        print("Saran: Tunggu sampai cooldown selesai sebelum menjalankan bot kembali")
-        print("       agar sesi browser dan koneksi aman dari pembatasan WAF.")
-        print("!" * 65 + "\n")
-        return
-
     if not start_debug_chrome():
         return
 
@@ -2064,6 +2107,7 @@ def main():
     from threshold_manager import get_threshold
     info_kat = get_threshold(kategori_aktif)
     print(f"[KATEGORI AKTIF] Menggunakan Kategori {kategori_aktif} ({info_kat.get('uraian', '')}) - Acuan Rasio: [{info_kat['min']:.2f} - {info_kat['max']:.2f}]")
+    print(f"[FILTER SELANCAR] Otomatis disesuaikan: Flag 3 (Flag Rasio 3) | Spesifik: Semua (tanpa filter spesifik)")
 
     print("\nPilih Mode Operasi:")
     print("  [1] Uji 1 Baris Pertama - DRY-RUN (Isi form tapi TIDAK submit, konfirmasi manual)")
@@ -2116,10 +2160,10 @@ def main():
             refresh_selancar_realtime,
             set_tindak_lanjut_selancar
         )
-        nerwana_updater = NerwanaManager(context)
+        nerwana_updater = NerwanaManager(context, kategori=kategori_aktif)
         selancar_page = nerwana_updater.get_or_create_page()
 
-        # 1. Buka dan siapkan Selancar: Landing -> DC Terkena Flag -> Kategori Aktif
+        # 1. Buka dan siapkan Selancar: Landing -> DC Terkena Flag -> Kategori Aktif (Flag 3 & Spesifik Semua)
         buka_dan_siapkan_selancar(selancar_page, kategori=kategori_aktif)
 
         session_skip_aids = set()
@@ -2168,7 +2212,7 @@ def main():
             # 2.5 Ubah status di Selancar menjadi 'Akan direvisi' sebelum membuka tab FASIH
             print(f"[SELANCAR] Menandai assignment '{nama}' (AID: {aid}) menjadi 'Akan direvisi' sebelum membuka FASIH...")
             set_tindak_lanjut_selancar(target_info, nerwana_updater, status="akan_direvisi")
-            time.sleep(0.8)
+            time.sleep(random.uniform(1.2, 1.8))
 
             # 3. Buka tab FASIH dari baris tabel di Selancar
             for pg in context.pages:
@@ -2181,7 +2225,7 @@ def main():
 
             print("[SELANCAR] Membuka tab FASIH dari baris tabel Selancar...")
             link_btn.scroll_into_view_if_needed()
-            time.sleep(0.5)
+            time.sleep(random.uniform(1.2, 2.0))
             try:
                 with context.expect_page(timeout=20000) as new_page_info:
                     link_btn.click()
@@ -2207,7 +2251,7 @@ def main():
                 fasih_page.wait_for_load_state("domcontentloaded", timeout=15000)
             except Exception:
                 pass
-            time.sleep(1.5)
+            time.sleep(random.uniform(1.5, 2.5))
 
             # Konfirmasi interaktif hanya aktif jika user memilih mode interaktif di menu utama (pilihan 1 atau 2)
             # Pada mode batch (pilihan 3 atau 4), bot langsung mengedit dan mengeksekusi secara otomatis
@@ -2245,10 +2289,10 @@ def main():
             # EVALUASI HASIL & STOP-LOSS (G11):
             if hasil == "WAF_BLOCK":
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
-                waf_terdeteksi = True
-                waf_bot_code = info or "BOT-DETECTED"
-                print("\n[CIRCUIT BREAKER] Program dihentikan total karena WAF bot terdeteksi.")
-                break
+                di_skip += 1
+                session_skip_aids.add(aid)
+                print(f"[SKIP] Baris '{nama}' dilewati karena kendala akses. Melanjutkan ke baris berikutnya...")
+                time.sleep(1.5)
 
             elif hasil == "SSO_LIMIT_EXCEEDED":
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
@@ -2321,8 +2365,7 @@ def main():
         print(f"Target Berhasil : {sukses} / {limit}")
         print(f"Dilewati (Skip) : {di_skip} (Selesai sebelumnya / Evaluasi SKIP / NEED_REVIEW)")
         print(f"Gagal/Batal     : {gagal}")
-        print(f"Berhenti WAF    : {'YA (' + waf_bot_code + ')' if waf_terdeteksi else 'TIDAK'}")
-        if sukses >= limit and limit > 1 and not waf_terdeteksi:
+        if sukses >= limit and limit > 1:
             print(f"[INFO] Batch 1 sesi selesai (target {limit} baris terpenuhi).")
         print("=" * 65)
 

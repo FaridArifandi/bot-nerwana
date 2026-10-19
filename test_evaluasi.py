@@ -46,22 +46,23 @@ class TestEvaluasi(unittest.TestCase):
         self.assertAlmostEqual(res['rasio_baru'], 0.75, places=2)
         self.assertEqual(res['kode_catatan'], '#DC_01')
 
-    def test_case_3_dua_kandidat_ambigu_need_review(self):
+    def test_case_3_dua_kandidat_dipilih_terbaik_apply(self):
         """
-        Kasus 3 (PRD §11): Dua kandidat sama-sama masuk rentang -> NEED_REVIEW (ambigu).
+        Kasus 3: Dua kandidat sama-sama masuk rentang -> dipilih kandidat terbaik (paling mendekati TARGET_RATIO) dan APPLY.
         """
-        # Kategori A: rentang [0.51 - 0.94]
+        # Kategori A: rentang [0.51 - 0.94], target ~0.725
         # pbj = 10jt, prod = 5jt, ops = 3jt, beli = 0
         # rasio awal = (10 - 8) / 10 = 0.20
-        # Kandidat 1: pbj * 10 = 100jt -> rasio = (100 - 8) / 100 = 0.92 (masuk)
-        # Kandidat 2: prod / 10 = 500rb -> rasio = (10 - 3.5) / 10 = 0.65 (masuk)
+        # Kandidat 1: pbj * 10 = 100jt -> rasio = (100 - 8) / 100 = 0.92 (|0.92 - 0.725| = 0.195)
+        # Kandidat 2: prod / 10 = 500rb -> rasio = (10 - 3.5) / 10 = 0.65 (|0.65 - 0.725| = 0.075) -> Terbaik!
         nilai = {'pbj': 10_000_000, 'prod': 5_000_000, 'ops': 3_000_000, 'beli': 0}
         res = evaluasi(nilai, kategori='A', kbli='01121')
         
-        self.assertEqual(res['status'], 'NEED_REVIEW')
-        self.assertIsNone(res['field'])
-        self.assertIsNone(res['nilai_baru'])
-        self.assertIn("Ambigu", res['alasan'])
+        self.assertEqual(res['status'], 'APPLY')
+        self.assertEqual(res['field'], 'prod')
+        self.assertEqual(res['nilai_baru'], 500_000)
+        self.assertAlmostEqual(res['rasio_baru'], 0.65, places=2)
+        self.assertIn("Dipilih otomatis dari", res['alasan'])
 
     def test_case_4_cap_nilai_baru_exceeded_need_review(self):
         """

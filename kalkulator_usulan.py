@@ -73,6 +73,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
     thresh = get_threshold(kat, kbli_str, skala="mikro_kecil")
     MIN_RATIO = thresh['min']
     MAX_RATIO = thresh['max']
+    TARGET_RATIO = float(thresh.get('target') or ((MIN_RATIO + MAX_RATIO) / 2.0))
     THRESH_LEVEL = thresh['level']
     THRESH_LABEL = f"{THRESH_LEVEL} [{MIN_RATIO:.2f} - {MAX_RATIO:.2f}]"
     
@@ -325,10 +326,12 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                         'rasio_baru': cand_r
                     })
 
-    # G5: Jika lolos tepat satu -> APPLY. Jika lebih dari satu (ambigu) atau nol -> NEED_REVIEW
-    if len(valid_candidates) == 1:
-        c = valid_candidates[0]
+    # G5: Jika lolos >= 1 -> Pilih kandidat terbaik yang paling mendekati TARGET_RATIO dan langsung APPLY
+    if len(valid_candidates) >= 1:
+        best_candidate = min(valid_candidates, key=lambda c: abs(c['rasio_baru'] - TARGET_RATIO))
+        c = best_candidate
         faktor_val = 10 if c['operasi'] == 'x10' else 0.1
+        info_alt = f" [Dipilih otomatis dari {len(valid_candidates)} kandidat wajar]" if len(valid_candidates) > 1 else ""
         return HasilEvaluasi({
             'status': 'APPLY',
             'field': c['field'],
@@ -336,34 +339,122 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
             'nilai_baru': c['nilai_baru'],
             'rasio_lama': rasio,
             'rasio_baru': c['rasio_baru'],
-            'alasan': f"Koreksi salah-nol ({c['operasi']}) pada {c['field'].upper()}: {int(c['nilai_lama']):,} -> {int(c['nilai_baru']):,} | Rasio: {rasio:.4f} -> {c['rasio_baru']:.4f} ({THRESH_LABEL})",
+            'alasan': f"Koreksi salah-nol ({c['operasi']}) pada {c['field'].upper()}: {int(c['nilai_lama']):,} -> {int(c['nilai_baru']):,} | Rasio: {rasio:.4f} -> {c['rasio_baru']:.4f} ({THRESH_LABEL}){info_alt}",
             'kode_catatan': "#DC_01",
             'acuan_threshold': THRESH_LABEL,
             'operasi': c['operasi'],
             'faktor': faktor_val
         })
-    elif len(valid_candidates) > 1:
-        daftar = ", ".join([f"{c['field']} ({c['operasi']})" for c in valid_candidates])
-        return HasilEvaluasi({
-            'status': 'NEED_REVIEW',
-            'field': None,
-            'nilai_lama': None,
-            'nilai_baru': None,
-            'rasio_lama': rasio,
-            'rasio_baru': None,
-            'alasan': f"Ambigu: {len(valid_candidates)} kandidat koreksi masuk rentang ({daftar}) ({THRESH_LABEL}). Butuh konfirmasi lapangan.",
-            'kode_catatan': "",
-            'acuan_threshold': THRESH_LABEL,
-            'operasi': None,
-            'faktor': None
-        })
     else:
+        # Fallback jika salah-nol tidak masuk rentang: Penyesuaian wajar pengeluaran & pendapatan (PRD Update)
+        # Menyesuaikan field secara proporsional mendekati TARGET_RATIO
+        # Syarat ketat: Tidak tiba-tiba melonjak menjadi ratusan juta jika nilai awal tidak ratusan juta.
+        def bulatkan_wajar(v):
+            if v <= 0:
+                return 0.0
+            if v < 1_000_000:
+                step = 50_000
+            elif v < 10_000_000:
+                step = 100_000
+            elif v < 50_000_000:
+                step = 500_000
+            else:
+                step = 1_000_000
+            return float(round(v / step) * step)
+
+        kandidat_wajar = []
+        biaya_saat_ini = prod + ops
+
+        # Skenario 1: Rasio di atas batas atas (rasio > MAX_RATIO, misal 0.95 vs max 0.94)
+        # Biaya terlalu kecil -> Naikkan prod atau ops secara wajar
+        if rasio > MAX_RATIO:
+            target_biaya = output * (1.0 - TARGET_RATIO)
+            # Coba sesuaikan PROD (baik prod > 0 maupun jika prod == 0 karena tidak mungkin biaya produksi 0)
+            target_prod = max(50_000, target_biaya - ops)
+            prod_bulat = bulatkan_wajar(target_prod)
+            batas_atas_prod = max(prod * 6.0, 2_000_000) if prod > 0 else max(output * 0.5, 2_000_000)
+            if prod_bulat <= batas_atas_prod and (prod < 50_000_000 and prod_bulat < 100_000_000) and (prod_bulat * skala_faktor <= CAP_NILAI_BARU):
+                ntb_c = output - prod_bulat - ops
+                r_c = ntb_c / output
+                if MIN_RATIO <= r_c <= MAX_RATIO:
+                    kandidat_wajar.append({
+                        'field': 'prod',
+                        'nilai_lama': prod,
+                        'nilai_baru': prod_bulat,
+                        'rasio_baru': r_c
+                    })
+            if ops > 0:
+                target_ops = max(50_000, target_biaya - prod)
+                ops_bulat = bulatkan_wajar(target_ops)
+                if ops_bulat <= max(ops * 6.0, 1_000_000) and (ops < 50_000_000 and ops_bulat < 100_000_000) and (ops_bulat * skala_faktor <= CAP_NILAI_BARU):
+                    ntb_c = output - prod - ops_bulat
+                    r_c = ntb_c / output
+                    if MIN_RATIO <= r_c <= MAX_RATIO:
+                        kandidat_wajar.append({
+                            'field': 'ops',
+                            'nilai_lama': ops,
+                            'nilai_baru': ops_bulat,
+                            'rasio_baru': r_c
+                        })
+
+        # Skenario 2: Rasio di bawah batas bawah (rasio < MIN_RATIO)
+        # Biaya terlalu besar -> Turunkan biaya, ATAU naikkan PBJ mendekati target (tanpa melonjak ke ratusan juta)
+        elif rasio < MIN_RATIO:
+            target_biaya = output * (1.0 - TARGET_RATIO)
+            # A. Coba turunkan prod jika prod > ops
+            if prod > 0 and target_biaya > ops:
+                target_prod = target_biaya - ops
+                prod_bulat = bulatkan_wajar(target_prod)
+                if 0 < prod_bulat < prod and (prod_bulat * skala_faktor <= CAP_NILAI_BARU):
+                    ntb_c = output - prod_bulat - ops
+                    r_c = ntb_c / output
+                    if MIN_RATIO <= r_c <= MAX_RATIO:
+                        kandidat_wajar.append({
+                            'field': 'prod',
+                            'nilai_lama': prod,
+                            'nilai_baru': prod_bulat,
+                            'rasio_baru': r_c
+                        })
+            # B. Coba sesuaikan PBJ wajar (hanya jika pbj_bulat <= pbj * 3.5 dan tidak melonjak drastis ke ratusan juta)
+            if biaya_saat_ini > 0 and pbj > 0 and rasio > -1.0:
+                target_pbj_raw = beli + (biaya_saat_ini / max(0.05, (1.0 - TARGET_RATIO)))
+                pbj_bulat = bulatkan_wajar(target_pbj_raw)
+                if (pbj_bulat <= pbj * 3.5) and (pbj < 50_000_000 and pbj_bulat < 100_000_000) and (pbj_bulat * skala_faktor <= CAP_NILAI_BARU):
+                    out_c = pbj_bulat - beli
+                    if out_c > 0:
+                        ntb_c = out_c - biaya_saat_ini
+                        r_c = ntb_c / out_c
+                        if MIN_RATIO <= r_c <= MAX_RATIO:
+                            kandidat_wajar.append({
+                                'field': 'pbj',
+                                'nilai_lama': pbj,
+                                'nilai_baru': pbj_bulat,
+                                'rasio_baru': r_c
+                            })
+
+        if kandidat_wajar:
+            best_w = min(kandidat_wajar, key=lambda c: abs(c['rasio_baru'] - TARGET_RATIO))
+            f_val = round(best_w['nilai_baru'] / best_w['nilai_lama'], 2) if best_w['nilai_lama'] > 0 else None
+            return HasilEvaluasi({
+                'status': 'APPLY',
+                'field': best_w['field'],
+                'nilai_lama': best_w['nilai_lama'],
+                'nilai_baru': best_w['nilai_baru'],
+                'rasio_lama': rasio,
+                'rasio_baru': best_w['rasio_baru'],
+                'alasan': f"Penyesuaian wajar {best_w['field'].upper()}: {int(best_w['nilai_lama']):,} -> {int(best_w['nilai_baru']):,} | Rasio: {rasio:.4f} -> {best_w['rasio_baru']:.4f} ({THRESH_LABEL})",
+                'kode_catatan': "#DC_01",
+                'acuan_threshold': THRESH_LABEL,
+                'operasi': 'penyesuaian_wajar',
+                'faktor': f_val
+            })
+
         if cap_exceeded_candidates:
             c_cap = cap_exceeded_candidates[0]
             skala_info = f" (skala tahunan: {int(c_cap.get('nilai_skala_selancar', c_cap['nilai_baru'])):,})" if blok == "usaha_2026" else ""
             alasan = f"Kandidat koreksi {c_cap['field'].upper()} ({int(c_cap['nilai_lama']):,} -> {int(c_cap['nilai_baru']):,}{skala_info}) melebihi CAP_NILAI_BARU ({CAP_NILAI_BARU:,}) ({THRESH_LABEL})."
         else:
-            alasan = f"Tidak ada kandidat salah-nol (x10 / :10) yang membuat rasio masuk rentang {THRESH_LABEL}. Rasio saat ini {rasio:.4f}."
+            alasan = f"Tidak ada kandidat koreksi wajar yang membuat rasio masuk rentang {THRESH_LABEL}. Rasio saat ini {rasio:.4f}."
             
         return HasilEvaluasi({
             'status': 'NEED_REVIEW',
