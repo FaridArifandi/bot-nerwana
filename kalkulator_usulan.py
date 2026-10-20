@@ -57,7 +57,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
             'rasio_lama': float,
             'rasio_baru': float | None,
             'alasan': str,
-            'kode_catatan': str,              # '#DC_01' jika APPLY
+            'kode_catatan': str,              # '#1' jika APPLY
             'acuan_threshold': str,
             'operasi': str | None,
             'faktor': float | None
@@ -180,7 +180,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                 'rasio_lama': 0.0,
                 'rasio_baru': r_cand,
                 'alasan': f"Imputasi PBJ rasio wajar ({r_cand:.4f}): 0 -> {int(pbj_kandidat):,} berbasis total biaya {int(biaya_total):,}{aset_txt} ({THRESH_LABEL})",
-                'kode_catatan': "#DC_01",
+                'kode_catatan': "#1",
                 'acuan_threshold': THRESH_LABEL,
                 'operasi': 'imputasi_wajar',
                 'faktor': None
@@ -340,7 +340,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
             'rasio_lama': rasio,
             'rasio_baru': c['rasio_baru'],
             'alasan': f"Koreksi salah-nol ({c['operasi']}) pada {c['field'].upper()}: {int(c['nilai_lama']):,} -> {int(c['nilai_baru']):,} | Rasio: {rasio:.4f} -> {c['rasio_baru']:.4f} ({THRESH_LABEL}){info_alt}",
-            'kode_catatan': "#DC_01",
+            'kode_catatan': "#1",
             'acuan_threshold': THRESH_LABEL,
             'operasi': c['operasi'],
             'faktor': faktor_val
@@ -443,7 +443,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                 'rasio_lama': rasio,
                 'rasio_baru': best_w['rasio_baru'],
                 'alasan': f"Penyesuaian wajar {best_w['field'].upper()}: {int(best_w['nilai_lama']):,} -> {int(best_w['nilai_baru']):,} | Rasio: {rasio:.4f} -> {best_w['rasio_baru']:.4f} ({THRESH_LABEL})",
-                'kode_catatan': "#DC_01",
+                'kode_catatan': "#1",
                 'acuan_threshold': THRESH_LABEL,
                 'operasi': 'penyesuaian_wajar',
                 'faktor': f_val
@@ -537,7 +537,7 @@ def calculate_usulan(row, kategori=None):
     # ----------------------------------------------------
     # CABANG 1: LOGIKA KHUSUS KATEGORI G (PERDAGANGAN)
     # Sensenya: Menaikkan pendapatan / nilai produksi kuesioner 27.a (PBJ)
-    # dan menyematkan remark catatan #DC_01
+    # dan menyematkan remark catatan #1
     # ----------------------------------------------------
     if kat == "G":
         # 1a. Cek kemungkinan kekurangan nol pada PBJ (pbj * 10)
@@ -555,7 +555,7 @@ def calculate_usulan(row, kategori=None):
                         'rasio_baru': cand_r,
                         'skor': 98,
                         'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,}) | {THRESH_LABEL}",
-                        'kode_catatan': "#DC_01",
+                        'kode_catatan': "#1",
                         'status': "PENDING",
                         'acuan_threshold': THRESH_LABEL
                     }
@@ -580,7 +580,7 @@ def calculate_usulan(row, kategori=None):
                             'rasio_baru': cand_r,
                             'skor': skor,
                             'alasan': f"Naikkan Pendapatan (Kues 27.a / PBJ) ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
-                            'kode_catatan': "#DC_01",
+                            'kode_catatan': "#1",
                             'status': "PENDING",
                             'acuan_threshold': THRESH_LABEL
                         }
@@ -601,7 +601,7 @@ def calculate_usulan(row, kategori=None):
                             'rasio_baru': cand_r,
                             'skor': 90,
                             'alasan': f"Dugaan kekurangan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,}) | {THRESH_LABEL}",
-                            'kode_catatan': "#DC_01",
+                            'kode_catatan': "#1",
                             'status': "PENDING",
                             'acuan_threshold': THRESH_LABEL
                         }
@@ -650,7 +650,7 @@ def calculate_usulan(row, kategori=None):
                         'rasio_baru': cand_r,
                         'skor': 98,
                         'alasan': f"Dugaan kelebihan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,}) | {THRESH_LABEL}",
-                        'kode_catatan': "#DC_01",
+                        'kode_catatan': "#1",
                         'status': "PENDING",
                         'acuan_threshold': THRESH_LABEL
                     }
@@ -670,7 +670,7 @@ def calculate_usulan(row, kategori=None):
                         'rasio_baru': cand_r,
                         'skor': 95,
                         'alasan': f"Dugaan kelebihan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,}) | {THRESH_LABEL}",
-                        'kode_catatan': "#DC_01",
+                        'kode_catatan': "#1",
                         'status': "PENDING",
                         'acuan_threshold': THRESH_LABEL
                     }
@@ -690,7 +690,7 @@ def calculate_usulan(row, kategori=None):
                         'rasio_baru': cand_r,
                         'skor': 96,
                         'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,}) | {THRESH_LABEL}",
-                        'kode_catatan': "#DC_01",
+                        'kode_catatan': "#1",
                         'status': "PENDING",
                         'acuan_threshold': THRESH_LABEL
                     }
@@ -713,7 +713,7 @@ def calculate_usulan(row, kategori=None):
                             'rasio_baru': cand_r,
                             'skor': 85,
                             'alasan': f"Naikkan PBJ ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
-                            'kode_catatan': "#DC_01",
+                            'kode_catatan': "#1",
                             'status': "PENDING",
                             'acuan_threshold': THRESH_LABEL
                         }
@@ -734,7 +734,7 @@ def calculate_usulan(row, kategori=None):
                         'rasio_baru': cand_r,
                         'skor': 80,
                         'alasan': f"Sesuaikan biaya produksi ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
-                        'kode_catatan': "#DC_01",
+                        'kode_catatan': "#1",
                         'status': "PENDING",
                         'acuan_threshold': THRESH_LABEL
                     }
@@ -770,7 +770,7 @@ def calculate_usulan(row, kategori=None):
                     'rasio_baru': cand_r,
                     'skor': 98,
                     'alasan': f"Dugaan kelebihan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,}) | {THRESH_LABEL}",
-                    'kode_catatan': "#DC_01",
+                    'kode_catatan': "#1",
                     'status': "PENDING",
                     'acuan_threshold': THRESH_LABEL
                 }
@@ -790,7 +790,7 @@ def calculate_usulan(row, kategori=None):
                     'rasio_baru': cand_r,
                     'skor': 95,
                     'alasan': f"Dugaan kelebihan nol pada Biaya Operasional ({int(ops):,} -> {int(cand_ops):,}) | {THRESH_LABEL}",
-                    'kode_catatan': "#DC_01",
+                    'kode_catatan': "#1",
                     'status': "PENDING",
                     'acuan_threshold': THRESH_LABEL
                 }
@@ -810,7 +810,7 @@ def calculate_usulan(row, kategori=None):
                     'rasio_baru': cand_r,
                     'skor': 96,
                     'alasan': f"Dugaan kekurangan nol pada PBJ ({int(pbj):,} -> {int(cand_pbj):,}) | {THRESH_LABEL}",
-                    'kode_catatan': "#DC_01",
+                    'kode_catatan': "#1",
                     'status': "PENDING",
                     'acuan_threshold': THRESH_LABEL
                 }
@@ -830,7 +830,7 @@ def calculate_usulan(row, kategori=None):
                     'rasio_baru': cand_r,
                     'skor': 92,
                     'alasan': f"Dugaan kekurangan nol pada Biaya Produksi ({int(prod):,} -> {int(cand_prod):,}) | {THRESH_LABEL}",
-                    'kode_catatan': "#DC_01",
+                    'kode_catatan': "#1",
                     'status': "PENDING",
                     'acuan_threshold': THRESH_LABEL
                 }
@@ -855,7 +855,7 @@ def calculate_usulan(row, kategori=None):
                         'rasio_baru': cand_r,
                         'skor': skor,
                         'alasan': f"Naikkan PBJ ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
-                        'kode_catatan': "#DC_01",
+                        'kode_catatan': "#1",
                         'status': "PENDING",
                         'acuan_threshold': THRESH_LABEL
                     }
@@ -880,7 +880,7 @@ def calculate_usulan(row, kategori=None):
                         'rasio_baru': cand_r,
                         'skor': 80,
                         'alasan': f"Turunkan pengeluaran proporsional ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
-                        'kode_catatan': "#DC_01",
+                        'kode_catatan': "#1",
                         'status': "PENDING",
                         'acuan_threshold': THRESH_LABEL
                     }
@@ -901,7 +901,7 @@ def calculate_usulan(row, kategori=None):
                     'rasio_baru': cand_r,
                     'skor': 75,
                     'alasan': f"Naikkan biaya produksi ke target rasio {cand_r:.2f} ({THRESH_LABEL})",
-                    'kode_catatan': "#DC_01",
+                    'kode_catatan': "#1",
                     'status': "PENDING",
                     'acuan_threshold': THRESH_LABEL
                 }

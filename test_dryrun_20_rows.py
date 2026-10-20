@@ -4,7 +4,7 @@ Validasi otomatis 20 skenario baris DRY-RUN sesuai PRD & Kriteria Selesai:
 1. Tidak ada perubahan selain faktor x10 atau :10.
 2. Tidak ada nilai baru di atas CAP_NILAI_BARU (250 jt pada skala yang berlaku).
 3. Setiap baris SKIP atau NEED_REVIEW memiliki alasan yang jelas.
-4. 100% baris APPLY memiliki remark_terverifikasi = 1 dan kode catatan #DC.
+4. 100% baris APPLY memiliki remark_terverifikasi = 1 dan kode catatan #1 / #DC.
 5. Mode DRY-RUN tidak pernah menekan tombol submit sungguhan.
 """
 
@@ -159,8 +159,8 @@ class TestDryRun20Rows(unittest.TestCase):
                 else:
                     self.assertLessEqual(res["nilai_baru"], CAP_NILAI_BARU, f"Nilai baru melebihi cap: {res['nilai_baru']}")
 
-                # KRITERIA 4: Baris APPLY punya kode catatan #DC
-                self.assertTrue(res["kode_catatan"].startswith("#DC"), f"Catatan harus berawalan #DC, dapat {res['kode_catatan']}")
+                # KRITERIA 4: Baris APPLY punya kode catatan # (misal #1 atau #DC)
+                self.assertTrue(res["kode_catatan"].startswith("#"), f"Catatan harus berawalan #, dapat {res['kode_catatan']}")
                 total_apply += 1
 
             elif res["status"] in ["SKIP", "NEED_REVIEW"]:

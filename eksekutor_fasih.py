@@ -1087,7 +1087,7 @@ def cari_container_isian_27a(page, idx=None):
     """
     Mencari container pertanyaan untuk isian 27a (atau 31a untuk usaha beroperasi 2026),
     yaitu 'Nilai produksi/pendapatan/penjualan barang dan jasa'.
-    Di sinilah remark #DC_01 WAJIB diletakkan sesuai instruksi reviewer.
+    Di sinilah remark #1 WAJIB diletakkan sesuai instruksi reviewer.
     """
     if idx is not None:
         c_spec = page.locator(f'[id="nilai_pendapatan#{idx}"], [id="nilai_pendapatan_bln#{idx}"]').first
@@ -1183,7 +1183,7 @@ def buka_dialog_catatan_pendapatan(page, container=None):
 
 def tambah_catatan_field(page, container, kode_catatan, max_retry=2):
     """
-    Menambahkan catatan (#DC_01 dst) pada isian pendapatan dan MEMVERIFIKASI
+    Menambahkan catatan (#1 dst) pada isian pendapatan dan MEMVERIFIKASI
     bahwa catatan benar-benar tersimpan (PRD §7.3):
     1. Buka dialog catatan
     2. Ketik catatan pada textarea
@@ -1313,11 +1313,11 @@ def cek_catatan_eksisting_27a(page, container=None):
         # TUTUP MODAL DIALOG SECARA TUNTAS
         tutup_modal_dialog(page)
 
-        # Periksa apakah ada riwayat catatan mengandung 'DC' (misal: #DC_01, DC_01, #DC)
+        # Periksa apakah ada riwayat catatan mengandung '#1' atau 'DC' (misal: #1, #DC_01, DC_01, #DC)
         import re
-        match = re.search(r'#?DC[_\s]*0?[1-9]?', dialog_text, re.I)
-        if match or "#DC" in dialog_text.upper() or "DC_01" in dialog_text.upper() or "DC01" in dialog_text.upper():
-            found_tag = match.group(0) if match else "#DC_01"
+        match = re.search(r'#?DC[_\s]*0?[1-9]?|#1\b', dialog_text, re.I)
+        if match or "#1" in dialog_text or "#DC" in dialog_text.upper() or "DC_01" in dialog_text.upper() or "DC01" in dialog_text.upper():
+            found_tag = match.group(0) if match else "#1"
             return True, found_tag
 
         return False, ""
@@ -1720,7 +1720,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
     """
     aid = row['assignment_id']
     nama = row['nama_usaha']
-    kode_catatan = row.get('kode_catatan') or "#DC_01"
+    kode_catatan = row.get('kode_catatan') or "#1"
     
     print("\n" + "=" * 65)
     print(f"EKSEKUSI ASSIGNMENT: {aid} (TARGET KATEGORI {kategori})")
@@ -1898,7 +1898,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
 
         # 10. Tambah Catatan / Remark (Tugas 5 & PRD §7.3)
         c_pendapatan = c_pendapatan_cek or cari_container_isian_27a(page, idx=idx_usaha)
-        catatan_final = kode_catatan or "#DC_01"
+        catatan_final = kode_catatan or "#1"
         remark_ok = False
         if isi_catatan:
             remark_ok = tambah_catatan_field(page, c_pendapatan, catatan_final)
@@ -2142,7 +2142,7 @@ def main():
 
     tanya_catatan = True
     if pilihan in ["1", "3"]:
-        jawab_c = input("Sertakan penulisan catatan (#DC_01) pada isian 27.a / 31.a? [y/n] (default y): ").strip().lower()
+        jawab_c = input("Sertakan penulisan catatan (#1) pada isian 27.a / 31.a? [y/n] (default y): ").strip().lower()
         tanya_catatan = (jawab_c != "n")
     else:
         tanya_catatan = True

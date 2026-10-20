@@ -106,7 +106,7 @@ class TestEksekusiBarisMock(unittest.TestCase):
             'assignment_id': 'TEST-001',
             'nama_usaha': 'Usaha Test 1',
             'status': 'PENDING',
-            'kode_catatan': '#DC_01'
+            'kode_catatan': '#1'
         }
         self.conn.execute("INSERT INTO kasus_nerwana (assignment_id, nama_usaha, status) VALUES (?, ?, ?)",
                           (row['assignment_id'], row['nama_usaha'], 'PENDING'))

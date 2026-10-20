@@ -44,7 +44,7 @@ class TestEvaluasi(unittest.TestCase):
         self.assertEqual(res['nilai_lama'], 3_200_000)
         self.assertEqual(res['nilai_baru'], 32_000_000)
         self.assertAlmostEqual(res['rasio_baru'], 0.75, places=2)
-        self.assertEqual(res['kode_catatan'], '#DC_01')
+        self.assertEqual(res['kode_catatan'], '#1')
 
     def test_case_3_dua_kandidat_dipilih_terbaik_apply(self):
         """
