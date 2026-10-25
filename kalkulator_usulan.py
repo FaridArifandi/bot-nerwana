@@ -270,18 +270,65 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                     'operasi': None,
                     'faktor': None
                 })
+            # COGS di luar rentang: sesuaikan Biaya Pembelian (beli) supaya COGS masuk rentang
+            # TANPA membuat NTB/Output keluar rentang.
+            import math
+
+            def _review_cogs(msg):
+                return HasilEvaluasi({
+                    'status': 'NEED_REVIEW',
+                    'field': None,
+                    'nilai_lama': None,
+                    'nilai_baru': None,
+                    'rasio_lama': rasio,
+                    'rasio_baru': None,
+                    'alasan': f"NTB/Output dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}) tetapi {cogs_label} di luar rentang. {msg}",
+                    'kode_catatan': "",
+                    'acuan_threshold': THRESH_LABEL,
+                    'operasi': None,
+                    'faktor': None
+                })
+
+            if beli <= 0:
+                return _review_cogs("Biaya Pembelian 0, tidak dikarang otomatis (G4).")
+
+            skala_b = max(1, int(nilai.get('bulan_beroperasi') or 1)) if blok == "usaha_2026" else 1
+            biaya = prod + ops
+            # Batas beli agar rasio NTB/Output tetap dalam rentang: pbj-beli ∈ [biaya/(1-MIN), biaya/(1-MAX)]
+            b_lo = max(c_min * pbj, pbj - biaya / max(1e-9, 1.0 - MAX_RATIO), 0.0)
+            b_hi = min(c_max * pbj, pbj - biaya / max(1e-9, 1.0 - MIN_RATIO))
+            if b_lo >= b_hi:
+                return _review_cogs("Tidak ada nilai Biaya Pembelian yang membuat COGS dan NTB/Output sama-sama dalam rentang.")
+
+            lebar = b_hi - b_lo
+            b0 = min(max(beli, b_lo + 0.1 * lebar), b_hi - 0.1 * lebar)   # perubahan sekecil mungkin, agak ke dalam rentang
+            step = 50_000 if b0 < 1_000_000 else (100_000 if b0 < 10_000_000 else (500_000 if b0 < 50_000_000 else 1_000_000))
+            b_new = float(round(b0 / step) * step)
+            if b_new < b_lo or b_new > b_hi or b_new <= 0:
+                b_new = float(round(b0))
+
+            out_n = pbj - b_new
+            cogs_n = b_new / pbj
+            r_n = ((out_n - biaya) / out_n) if out_n > 0 else -1.0
+            if not (out_n > 0 and c_min <= cogs_n <= c_max and MIN_RATIO <= r_n <= MAX_RATIO):
+                return _review_cogs("Penyesuaian Biaya Pembelian tidak lolos verifikasi rentang.")
+            if b_new > beli * 10 or b_new < beli / 10:
+                return _review_cogs(f"Perubahan Biaya Pembelian ({int(beli):,} -> {int(b_new):,}) terlalu besar untuk otomatis.")
+            if b_new > beli and b_new * skala_b > CAP_NILAI_BARU:
+                return _review_cogs(f"Biaya Pembelian baru ({int(b_new):,}) melebihi CAP_NILAI_BARU ({CAP_NILAI_BARU:,}).")
+
             return HasilEvaluasi({
-                'status': 'SKIP',
-                'field': None,
-                'nilai_lama': None,
-                'nilai_baru': None,
+                'status': 'APPLY',
+                'field': 'beli',
+                'nilai_lama': beli,
+                'nilai_baru': b_new,
                 'rasio_lama': rasio,
-                'rasio_baru': rasio,
-                'alasan': f"NTB/Output dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}) tetapi {cogs_label} di luar rentang. Tidak diubah otomatis.",
-                'kode_catatan': "",
+                'rasio_baru': r_n,
+                'alasan': f"Penyesuaian COGS: Biaya Pembelian {int(beli):,} -> {int(b_new):,} | COGS {beli / pbj:.4f} -> {cogs_n:.4f} [{c_min:.4f} - {c_max:.4f}] | NTB/Output {rasio:.4f} -> {r_n:.4f} ({THRESH_LABEL})",
+                'kode_catatan': "#1",
                 'acuan_threshold': THRESH_LABEL,
-                'operasi': None,
-                'faktor': None
+                'operasi': 'penyesuaian_cogs',
+                'faktor': round(b_new / beli, 2)
             })
         return HasilEvaluasi({
             'status': 'SKIP',
