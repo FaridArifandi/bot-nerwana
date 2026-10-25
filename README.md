@@ -156,6 +156,20 @@ Jika rekan kerja Anda sudah pernah mendownload repo ini dan ingin mengambil upda
 
 ---
 
+## 👥 Banyak Akun / Banyak Komputer
+
+Satu repo ini bisa dipakai bersamaan oleh banyak akun, tiap orang di komputernya sendiri:
+
+1. `git clone` repo ini, lalu klik ganda `0_install_dependensi.bat` (membuat file `sso` dari `sso.example`).
+2. Isi `sso` dengan username & password SSO **akun sendiri** (file ini tidak ikut Git).
+3. Klik `1_buka_chrome_debug.bat`, lalu `2_jalankan_bot.bat`.
+
+- Wilayah (kabkota) dibaca otomatis dari akun yang login, tidak lagi tetap 1175.
+- `data_cleaning.db` dibuat otomatis & lokal di tiap komputer (tidak di-commit). Status sebenarnya dibaca dari Selancar.
+- Antar akun tidak berebut baris: baris yang `akan_direvisi`/terkunci oleh akun lain dilewati, dan urutan 8 baris teratas diacak.
+
+---
+
 ## ⚙️ Menu & Mode Eksekusi
 
 Saat `eksekutor_fasih.py` berjalan, Anda akan diminta:

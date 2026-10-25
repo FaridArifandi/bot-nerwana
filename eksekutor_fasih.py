@@ -95,7 +95,8 @@ def cek_waf_cooldown():
     return False, 0, "", ""
 
 def get_sso_credentials():
-    sso_file = os.path.join(BASE_DIR, "sso")
+    sso_file = next((os.path.join(BASE_DIR, n) for n in ("sso", ".sso", "sso.txt")
+                     if os.path.exists(os.path.join(BASE_DIR, n))), os.path.join(BASE_DIR, "sso"))
     if os.path.exists(sso_file):
         u, p = "", ""
         with open(sso_file, "r", encoding="utf-8") as f:
@@ -2049,6 +2050,518 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
     finally:
         conn.close()
 
+def verifikasi_dan_resubmit_baris(page, row, dry_run=True, interaktif=False, nerwana_updater=None, target_info=None, kategori="A"):
+    """
+    Memeriksa kuesioner FASIH yang sudah dikerjakan sebelumnya:
+    1. Memastikan apakah catatan/remark (#1 / #DC) sudah benar-benar tersimpan di Isian 27a/31a.
+    2. Memeriksa apakah nilai isian sudah sesuai threshold (evaluasi).
+    3. Jika nilai sudah aman DAN remark sudah ada -> Status VERIFIED_OK (tidak perlu submit ulang).
+    4. Jika belum ada remark atau nilai belum sesuai -> Tambah remark / koreksi nilai, lalu KIRIM ULANG (Submit) ke FASIH.
+    """
+    aid = row['assignment_id']
+    nama = row['nama_usaha']
+    kode_catatan = row.get('kode_catatan') or "#1"
+
+    print("\n" + "=" * 65)
+    print(f"VERIFIKASI ULANG ASSIGNMENT: {aid} (KATEGORI {kategori})")
+    print(f"Nama Usaha  : {nama}")
+    print(f"Pengisi     : {row.get('tindak_lanjut_oleh') or 'Farid Akbar Arifandi'}")
+    print(f"Mode        : {'DRY-RUN / AUDIT ONLY (Tanpa Submit)' if dry_run else 'AUTO-FIX & SUBMIT SUNGGUHAN'}")
+    print("=" * 65)
+
+    conn = get_connection()
+    from updater_nerwana import set_tindak_lanjut_selancar
+
+    try:
+        # 0. Cek awal WAF bot
+        is_waf, bot_code = cek_waf_bot(page)
+        if is_waf:
+            return handle_waf_block(page, row, bot_code)
+
+        # 1. Pastikan tab FASIH selesai memuat & tidak ada SSO tertahan
+        sel_pg = nerwana_updater.page if nerwana_updater else None
+        l_btn = target_info.get('link_btn') if target_info else None
+        sso_res, sso_bot = selesaikan_sso_pada_fasih(page, selancar_page=sel_pg, link_btn=l_btn)
+        if sso_res == "WAF":
+            return handle_waf_block(page, row, sso_bot)
+        elif sso_res == "SSO_LIMIT_EXCEEDED":
+            return "SSO_LIMIT_EXCEEDED", None
+
+        ready_res, ready_bot = wait_fasih_ready(page, selancar_page=sel_pg, link_btn=l_btn)
+        if ready_res == "WAF":
+            return handle_waf_block(page, row, ready_bot)
+        elif ready_res in ["ERROR", "TIMEOUT", "CLOSED"]:
+            print(f"[SKIP] Akses FASIH untuk '{aid}' ({nama}) terkendala: {ready_res}. Dilewati!")
+            return "SKIPPED_FASIH_ERROR", None
+
+        # 2. Masuk mode edit (klik pensil / revoke)
+        lakukan_revoke_dan_edit(page)
+
+        # Cek WAF setelah revoke
+        is_waf, bot_code = cek_waf_bot(page)
+        if is_waf:
+            return handle_waf_block(page, row, bot_code)
+
+        time.sleep(0.5)
+
+        # 3. Buka Blok II & Deteksi indeks usaha aktif
+        ok_blok, idx_usaha = buka_blok_ii(page, nama)
+        if not ok_blok:
+            raise Exception("Gagal membuka Blok II di FASIH")
+
+        # 4. Deteksi jenis Blok
+        blok_jenis = deteksi_blok(page)
+        print(f"[FASIH] Blok terdeteksi: '{blok_jenis}' (Indeks usaha #{idx_usaha})")
+
+        # 5. Cek Catatan / Remark di Isian 27a / 31a
+        c_pendapatan = cari_container_isian_27a(page, idx=idx_usaha)
+        ada_remark, teks_remark = cek_catatan_eksisting_27a(page, c_pendapatan)
+        tutup_modal_dialog(page)
+
+        if ada_remark:
+            print(f"[STATUS REMARK] SUDAH ADA CATATAN: '{teks_remark}'")
+        else:
+            print("[STATUS REMARK] BELUM ADA CATATAN pada Isian Pendapatan!")
+
+        # 6. Baca nilai langsung dari FASIH
+        data_fasih = baca_nilai_fasih(page, blok=blok_jenis, idx=idx_usaha)
+        if not data_fasih['ok']:
+            err_baca = data_fasih.get('error', 'Gagal membaca nilai di FASIH')
+            print(f"[FASIH-NEED_REVIEW] Field tidak terbaca lengkap: {err_baca}")
+            return "NEED_REVIEW", err_baca
+
+        kat_fasih = data_fasih.get('kategori') or kategori
+        kbli_fasih = data_fasih.get('kbli') or row.get('kbli', '')
+
+        nilai_dict = {
+            'pbj': data_fasih['pbj'],
+            'prod': data_fasih['prod'],
+            'ops': data_fasih['ops'],
+            'beli': data_fasih.get('beli', 0.0),
+            'bulan_beroperasi': data_fasih.get('bulan_beroperasi', 1),
+            'aset_tanah': data_fasih.get('aset_tanah', 0.0)
+        }
+
+        print(f"[FASIH DATA] Kategori: {kat_fasih} | KBLI: {kbli_fasih} | PBJ: {nilai_dict['pbj']:,.0f} | Prod: {nilai_dict['prod']:,.0f} | Ops: {nilai_dict['ops']:,.0f}")
+
+        # 7. Evaluasi nilai terhadap threshold
+        rasio_selancar = None
+        if target_info:
+            rasio_selancar = target_info.get('rasio_selancar')
+
+        hasil_eval = evaluasi(
+            nilai=nilai_dict,
+            kategori=kat_fasih,
+            kbli=kbli_fasih,
+            blok=blok_jenis,
+            rasio_selancar=rasio_selancar
+        )
+
+        print(f"[EVALUASI] Aksi: {hasil_eval.aksi} | Rasio Saat Ini: {hasil_eval.rasio:.4f} | Catatan: {hasil_eval.alasan}")
+
+        # KONDISI 1: Nilai sudah aman & Remark sudah ada -> SEMPURNA!
+        if hasil_eval.aksi == "SKIP" and ada_remark:
+            print(f"\n[HASIL VERIFIKASI] SUDAH BENAR & SUDAH ADA REMARK ({teks_remark}).")
+            print("                   Tidak perlu submit ulang.")
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = 'COMPLETED', tindak_lanjut = 'sudah_direvisi',
+                    remark_terverifikasi = 1, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+            conn.commit()
+            log_audit(aid, nama, "VERIFIED_OK", nilai_lama=nilai_dict, status_sebelumnya=row.get('status'), status_baru="COMPLETED", pesan=f"Nilai aman (rasio {hasil_eval.rasio:.2f}), remark '{teks_remark}' ada.")
+            return "VERIFIED_OK", f"Remark '{teks_remark}' ada & rasio aman"
+
+        # KONDISI 2: Nilai butuh review manual khusus
+        if hasil_eval.aksi == "NEED_REVIEW":
+            print(f"\n[HASIL VERIFIKASI] NEED_REVIEW: {hasil_eval.alasan}")
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = 'NEED_REVIEW', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (hasil_eval.alasan, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+            conn.commit()
+            return "NEED_REVIEW", hasil_eval.alasan
+
+        # KONDISI 3: Nilai sudah aman, TAPI Remark belum ada -> Tambah remark lalu submit ulang!
+        # KONDISI 4: Nilai BELUM aman (APPLY) -> Koreksi nilai, pastikan remark ada, lalu submit ulang!
+        perlu_koreksi_nilai = (hasil_eval.aksi == "APPLY")
+        perlu_tambah_remark = (not ada_remark)
+
+        ringkasan_tindakan = []
+        if perlu_koreksi_nilai:
+            ringkasan_tindakan.append(f"Koreksi field '{hasil_eval.field}' ({hasil_eval.nilai_lama:,.0f} -> {hasil_eval.nilai_baru:,.0f})")
+        if perlu_tambah_remark:
+            ringkasan_tindakan.append(f"Tambah Catatan '{kode_catatan}' pada Isian Pendapatan")
+        ringkasan_tindakan.append("Selesaikan Anomali di Catatan & Submit Ulang ke FASIH")
+
+        print("\n[RENCANA TINDAKAN]")
+        for i, act in enumerate(ringkasan_tindakan, 1):
+            print(f"  {i}. {act}")
+
+        # Jika koreksi nilai:
+        nilai_baru_dict = dict(nilai_dict)
+        if perlu_koreksi_nilai:
+            input_loc = data_fasih['field_locators'].get(hasil_eval.field)
+            if not input_loc or input_loc.count() == 0:
+                c_fallback = page.locator(f'[id*="{hasil_eval.field}"]:visible, [id*="pendapatan"]:visible').first
+                if c_fallback.count() > 0:
+                    input_loc = c_fallback.locator('input[type="text"]').first
+
+            if not input_loc or input_loc.count() == 0:
+                err_loc = f"Input locator field '{hasil_eval.field}' tidak ditemukan"
+                return "NEED_REVIEW", err_loc
+
+            ok_rb, val_rb = isi_field_dengan_readback(page, input_loc, hasil_eval.nilai_baru, nilai_lama=hasil_eval.nilai_lama)
+            if not ok_rb:
+                err_rb = f"Readback mismatch pada {hasil_eval.field}: '{val_rb}' != target '{hasil_eval.nilai_baru:,.0f}'"
+                return "READBACK_MISMATCH", err_rb
+            nilai_baru_dict[hasil_eval.field] = hasil_eval.nilai_baru
+
+        # Jika perlu tambah remark:
+        if perlu_tambah_remark:
+            c_pendapatan = c_pendapatan or cari_container_isian_27a(page, idx=idx_usaha)
+            remark_ok = tambah_catatan_field(page, c_pendapatan, kode_catatan)
+            if not remark_ok:
+                print(f"[WARN] Gagal menambahkan remark '{kode_catatan}'.")
+                return "REMARK_FAILED", None
+
+        # Selesaikan anomali di halaman Catatan
+        proses_halaman_catatan_dan_tampilkan_anomali(page)
+
+        # Mode Interaktif
+        if interaktif:
+            print("\n" + "-" * 60)
+            print(f"[KONFIRMASI MANUAL] Baris '{nama}' (AID: {aid})")
+            print(f"Tindakan: {', '.join(ringkasan_tindakan)}")
+            if dry_run:
+                jawab = input("Lanjutkan (dry-run, tanpa submit)? [y/n]: ").strip().lower()
+                if jawab != 'y':
+                    return "CANCELLED", None
+            else:
+                jawab = input("Submit ulang sekarang ke server FASIH? [y/n]: ").strip().lower()
+                if jawab != 'y':
+                    return "CANCELLED", None
+
+        # Eksekusi Submit
+        if dry_run:
+            print("[DRY-RUN] Uji coba berhasil disiapkan tanpa submit.")
+            return "DRY_RUN_SUCCESS", ", ".join(ringkasan_tindakan)
+
+        # SUBMIT SUNGGUHAN KE FASIH
+        print("[FASIH] Melakukan submit ulang assignment ke server...")
+        submit_ok, submit_err = submit_assignment(page)
+        if submit_ok:
+            print(f"[SUBMIT SUKSES] Assignment '{aid}' ({nama}) berhasil dikirim ulang ke FASIH!")
+            # Pastikan Selancar 'sudah_direvisi'
+            if nerwana_updater and target_info:
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status="sudah_direvisi")
+
+            conn.execute("""
+                UPDATE kasus_nerwana 
+                SET status = 'COMPLETED', tindak_lanjut = 'sudah_direvisi',
+                    remark_terverifikasi = 1, nilai_lama_fasih = ?, nilai_baru_fasih = ?,
+                    blok = ?, evaluasi_at = ?
+                WHERE assignment_id = ? AND nama_usaha = ?
+            """, (json.dumps(nilai_dict), json.dumps(nilai_baru_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+            conn.commit()
+            log_audit(aid, nama, "RESUBMITTED_SUCCESS", nilai_lama=nilai_dict, nilai_baru=nilai_baru_dict, status_sebelumnya=row.get('status'), status_baru="COMPLETED", pesan="; ".join(ringkasan_tindakan))
+            return "RESUBMITTED", ", ".join(ringkasan_tindakan)
+        else:
+            is_waf, bot_code = cek_waf_bot(page)
+            if is_waf:
+                return handle_waf_block(page, row, bot_code)
+            if submit_err and "GALAT" in str(submit_err):
+                return "NEED_REVIEW", submit_err
+            return "SUBMIT_FAILED", submit_err
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[ERROR] Verifikasi gagal: {e}")
+        if cek_fasih_error(page) or "forbidden" in str(e).lower() or "read-only" in str(e).lower():
+            return "SKIPPED_FASIH_ERROR", str(e)
+        return "FAILED", str(e)
+    finally:
+        conn.close()
+
+def main_verifikasi_farid():
+    """
+    Sub-modul khusus untuk memverifikasi ulang baris kuesioner yang telah dikerjakan oleh Farid Akbar Arifandi.
+    Mengecek apakah remark sudah benar-benar terisi dan nilai sudah sesuai threshold di FASIH.
+    Jika belum terisi atau nilai belum benar, bot akan melengkapi dan mengirim ulang (re-submit).
+    """
+    print("=" * 65)
+    print("      VERIFIKASI & RE-SUBMIT KASUS 'FARID AKBAR ARIFANDI'")
+    print("  Memeriksa Catatan/Remark Isian 27a & Kesesuaian Nilai di FASIH")
+    print("=" * 65)
+
+    cleanup_old_screenshots(max_keep=30)
+    if not start_debug_chrome():
+        return
+
+    # 1. Pilihan Kategori
+    print("\nPilih Kategori Lapangan Usaha:")
+    print("  [1] Kategori A - Pertanian [Default: 288 baris kemarin]")
+    print("  [2] Kategori G - Perdagangan")
+    print("  [3] Kategori C - Industri Pengolahan")
+    print("  [4] Semua Kategori")
+    print("  [Atau ketik langsung huruf kategori: B, D, E, F, dll]")
+    pilih_kat = input("Masukkan pilihan kategori (default 1 - A): ").strip() or "1"
+    if pilih_kat == "1":
+        kategori_aktif = "A"
+    elif pilih_kat == "2":
+        kategori_aktif = "G"
+    elif pilih_kat == "3":
+        kategori_aktif = "C"
+    elif pilih_kat == "4":
+        kategori_aktif = "SEMUA"
+    else:
+        kategori_aktif = pilih_kat.upper()
+
+    # 2. Pilihan Sumber Target
+    print("\nPilih Sumber Target Baris:")
+    print("  [1] Dari Database Lokal (Cepat & Langsung ke Link FASIH) [Default]")
+    print("  [2] Live Scan Selancar (Menelusuri Tabel Selancar di Browser)")
+    sumber_target = input("Masukkan pilihan sumber [1/2] (default 1): ").strip() or "1"
+
+    hanya_belum_verif = True
+    if sumber_target == "1":
+        print("\nFilter Status Verifikasi Database:")
+        print("  [1] Hanya yang BELUM Terverifikasi (remark_terverifikasi = 0) [Default]")
+        print("  [2] Semua Baris Farid (Termasuk yang sudah terverifikasi)")
+        pilih_verif = input("Pilih filter verifikasi [1/2] (default 1): ").strip() or "1"
+        hanya_belum_verif = (pilih_verif == "1")
+
+    # 3. Pilihan Mode Operasi
+    print("\nPilih Mode Operasi:")
+    print("  [1] Audit / Dry-Run (Hanya cek status & catat, TIDAK submit ulang) [Default]")
+    print("  [2] Auto-Fix & Re-Submit Sungguhan (Kirim ulang jika remark/nilai belum benar)")
+    print("  [3] Interaktif (Tanya konfirmasi [y/n] per baris sebelum kirim)")
+    pilih_mode = input("Masukkan pilihan mode [1/2/3] (default 1): ").strip() or "1"
+
+    dry_run = True
+    interaktif = False
+    if pilih_mode == "1":
+        dry_run = True
+        interaktif = False
+    elif pilih_mode == "2":
+        dry_run = False
+        interaktif = False
+    elif pilih_mode == "3":
+        dry_run = False
+        interaktif = True
+
+    # 4. Limit Baris
+    limit_str = input("\nBerapa jumlah baris yang ingin diverifikasi? (1-100, default 20): ").strip() or "20"
+    limit = max(1, min(int(limit_str), 100))
+
+    # Eksekusi dengan Playwright
+    with sync_playwright() as p:
+        print(f"\n[CDP] Menghubungkan ke browser Chrome (port 9222)...")
+        browser = p.chromium.connect_over_cdp("http://localhost:9222")
+        context = browser.contexts[0]
+
+        from updater_nerwana import (
+            NerwanaManager,
+            buka_dan_siapkan_selancar,
+            cari_target_verifikasi_di_tabel_selancar,
+            lanjut_halaman_berikutnya_selancar,
+            refresh_selancar_realtime
+        )
+        from database import get_target_verifikasi
+
+        kat_nerwana = "A" if kategori_aktif == "SEMUA" else kategori_aktif
+        nerwana_updater = NerwanaManager(context, kategori=kat_nerwana)
+        selancar_page = nerwana_updater.get_or_create_page()
+
+        # Siapkan Selancar jika mode scan live atau sebagai fallback tab
+        if sumber_target == "2":
+            buka_dan_siapkan_selancar(selancar_page, kategori=kat_nerwana)
+
+        # Ambil daftar target jika dari DB
+        target_list = []
+        if sumber_target == "1":
+            target_list = get_target_verifikasi(
+                kategori=kategori_aktif,
+                pengisi="Farid Akbar Arifandi",
+                hanya_belum_verif=hanya_belum_verif,
+                limit=limit
+            )
+            print(f"\n[TARGET DB] Ditemukan {len(target_list)} baris untuk diverifikasi.")
+            if not target_list:
+                print("[INFO] Tidak ada baris yang cocok dengan kriteria verifikasi.")
+                return
+
+        # Counter statistik
+        total_dicek = 0
+        stat_verified_ok = 0
+        stat_resubmitted = 0
+        stat_dry_run = 0
+        stat_need_review = 0
+        stat_gagal = 0
+        stat_skip = 0
+
+        session_skip_aids = set()
+        consecutive_errors = 0
+
+        # Loop pemrosesan
+        idx_target = 0
+        while total_dicek < limit:
+            row = None
+            target_info = None
+
+            if sumber_target == "1":
+                if idx_target >= len(target_list):
+                    break
+                row = target_list[idx_target]
+                idx_target += 1
+            else:
+                conn = get_connection()
+                target_info = cari_target_verifikasi_di_tabel_selancar(
+                    selancar_page, 
+                    conn, 
+                    pengisi="Farid Akbar Arifandi", 
+                    session_skip_aids=session_skip_aids, 
+                    kategori=kat_nerwana
+                )
+                conn.close()
+
+                while not target_info:
+                    pindah = lanjut_halaman_berikutnya_selancar(selancar_page)
+                    if not pindah:
+                        break
+                    conn = get_connection()
+                    target_info = cari_target_verifikasi_di_tabel_selancar(
+                        selancar_page, 
+                        conn, 
+                        pengisi="Farid Akbar Arifandi", 
+                        session_skip_aids=session_skip_aids, 
+                        kategori=kat_nerwana
+                    )
+                    conn.close()
+
+                if not target_info:
+                    print(f"\n[INFO] Tidak ada lagi baris Farid Akbar Arifandi di tabel Selancar.")
+                    break
+
+                row = target_info['db_row']
+
+            aid = row.get('assignment_id')
+            nama = row.get('nama_usaha')
+            link_fasih = row.get('link_fasih')
+            kat_row = row.get('kategori') or kat_nerwana
+
+            session_skip_aids.add(aid)
+            total_dicek += 1
+            print(f"\n>>> Verifikasi Kasus [{total_dicek}/{limit}]: '{nama}' (AID: {aid}) <<<")
+
+            # Buka tab FASIH
+            # Bersihkan tab FASIH lama jika ada
+            for pg in context.pages:
+                try:
+                    if not pg.is_closed() and "fasih-sm.bps.go.id" in pg.url.lower():
+                        pg.close()
+                except Exception:
+                    pass
+
+            fasih_page = None
+            if target_info and target_info.get('link_btn'):
+                l_btn = target_info['link_btn']
+                l_btn.scroll_into_view_if_needed()
+                time.sleep(1.0)
+                try:
+                    with context.expect_page(timeout=20000) as new_page_info:
+                        l_btn.click()
+                    fasih_page = new_page_info.value
+                except Exception:
+                    fasih_pages = [pg for pg in context.pages if "fasih" in pg.url.lower() and not pg.is_closed()]
+                    if fasih_pages:
+                        fasih_page = fasih_pages[-1]
+
+            if not fasih_page or fasih_page.is_closed():
+                if link_fasih:
+                    print(f"[NAVIGASI] Membuka URL kuesioner FASIH...")
+                    fasih_page = context.new_page()
+                    try:
+                        fasih_page.goto(link_fasih, timeout=45000)
+                        fasih_page.wait_for_load_state("domcontentloaded")
+                    except Exception as e_nav:
+                        print(f"[WARN] Navigasi: {e_nav}")
+
+            if not fasih_page or fasih_page.is_closed():
+                print(f"[ERROR] Gagal membuka tab FASIH untuk '{nama}'. Melanjutkan...")
+                stat_gagal += 1
+                consecutive_errors += 1
+                continue
+
+            # Jalankan verifikasi & resubmit
+            hasil, detail = verifikasi_dan_resubmit_baris(
+                fasih_page,
+                row,
+                dry_run=dry_run,
+                interaktif=interaktif,
+                nerwana_updater=nerwana_updater,
+                target_info=target_info,
+                kategori=kat_row
+            )
+
+            # Tutup tab FASIH setelah selesai
+            try:
+                if fasih_page and not fasih_page.is_closed():
+                    fasih_page.close()
+            except Exception:
+                pass
+            fasih_page = None
+
+            # Evaluasi Hasil
+            if hasil == "VERIFIED_OK":
+                stat_verified_ok += 1
+                consecutive_errors = 0
+            elif hasil == "RESUBMITTED":
+                stat_resubmitted += 1
+                consecutive_errors = 0
+            elif hasil in ["DRY_RUN_SUCCESS", "DRY_RUN_REMARK_ADDED", "DRY_RUN_VALUE_AND_REMARK"]:
+                stat_dry_run += 1
+                consecutive_errors = 0
+            elif hasil == "NEED_REVIEW":
+                stat_need_review += 1
+                consecutive_errors = 0
+            elif hasil in ["SKIPPED_FASIH_ERROR", "SKIP"]:
+                stat_skip += 1
+                consecutive_errors = 0
+            elif hasil == "CANCELLED":
+                print("[INFO] Dibatalkan oleh pengguna.")
+                break
+            elif hasil == "WAF_BLOCK":
+                stat_skip += 1
+                print("[WAF] Sesi terhalang WAF. Batch verifikasi dihentikan sementara.")
+                break
+            elif hasil == "SSO_LIMIT_EXCEEDED":
+                print("[SSO] Memerlukan login manual.")
+                break
+            else:
+                stat_gagal += 1
+                consecutive_errors += 1
+                if consecutive_errors >= MAX_ERR_BERTURUT:
+                    print(f"\n[CIRCUIT BREAKER] Terjadi {MAX_ERR_BERTURUT} error berturut-turut. Menghentikan proses.")
+                    break
+
+            jeda = random.uniform(JEDA_ANTAR_ASSIGNMENT_MIN, JEDA_ANTAR_ASSIGNMENT_MAX)
+            time.sleep(jeda)
+
+        print("\n" + "=" * 65)
+        print("RINGKASAN HASIL VERIFIKASI:")
+        print(f"Total Diperiksa         : {total_dicek}")
+        print(f"Sudah Sesuai (OK)       : {stat_verified_ok} (Remark & nilai sudah aman, tanpa submit ulang)")
+        print(f"Berhasil Re-Submit      : {stat_resubmitted} (Telah dikirim ulang ke FASIH)")
+        print(f"Hasil Dry-Run           : {stat_dry_run}")
+        print(f"Butuh Review Manual     : {stat_need_review}")
+        print(f"Dilewati (Skip/Akses)   : {stat_skip}")
+        print(f"Gagal/Error             : {stat_gagal}")
+        print("=" * 65)
+
 def main():
     print("=" * 65)
     print("           FASE 3: EKSEKUTOR FASIH (PLAYWRIGHT)")
@@ -2063,15 +2576,19 @@ def main():
     # Pilihan Modul Utama
     print("\n" + "=" * 65)
     print("PILIH TUGAS / MODUL BOT:")
-    print("  [1] Data Cleaning (DC Terkena Flag - Evaluasi Rasio NTB/Output) [Default]")
+    print("  [1] Data Cleaning Reguler (DC Terkena Flag - Baris Belum Direvisi) [Default]")
     print("  [2] Inkonsistensi Sosek (sosek_33 - Verifikasi NIK 6 Digit Kembar)")
+    print("  [3] Verifikasi & Re-Submit Kasus 'Farid Akbar Arifandi' (Cek Remark & Nilai FASIH)")
     print("  [0] Keluar")
     print("=" * 65)
-    pilih_modul = input("\nMasukkan pilihan tugas [1/2/0] (default 1): ").strip() or "1"
+    pilih_modul = input("\nMasukkan pilihan tugas [1/2/3/0] (default 1): ").strip() or "1"
 
     if pilih_modul == "2":
         from eksekutor_sosek import main as main_sosek
         main_sosek()
+        return
+    elif pilih_modul == "3":
+        main_verifikasi_farid()
         return
     elif pilih_modul == "0":
         print("[INFO] Program selesai.")
@@ -2158,7 +2675,9 @@ def main():
             cari_target_di_tabel_selancar, 
             lanjut_halaman_berikutnya_selancar,
             refresh_selancar_realtime,
-            set_tindak_lanjut_selancar
+            set_tindak_lanjut_selancar,
+            ringkas_diag,
+            pulihkan_selancar
         )
         nerwana_updater = NerwanaManager(context, kategori=kategori_aktif)
         selancar_page = nerwana_updater.get_or_create_page()
@@ -2174,6 +2693,7 @@ def main():
         waf_bot_code = ""
         consecutive_errors = 0  # Stop-loss counter (G11)
         total_submitted_count = 0  # Counter untuk konfirmasi awal (G12)
+        akses_err_berturut = 0  # FASIH timeout/error/WAF berturut-turut (cegah bot menghabiskan antrean)
 
         fasih_page = None
         first_run = True
@@ -2184,21 +2704,45 @@ def main():
                 refresh_selancar_realtime(selancar_page, kategori=kategori_aktif)
             first_run = False
 
-            conn = get_connection()
-            # 2. Cari baris di tabel Selancar secara urut (baris 1, 2, dst)
-            target_info = cari_target_di_tabel_selancar(selancar_page, conn, session_skip_aids=session_skip_aids, kategori=kategori_aktif)
-            conn.close()
-
-            while not target_info:
-                pindah = lanjut_halaman_berikutnya_selancar(selancar_page)
-                if not pindah:
-                    break
+            # 2. Cari baris di tabel Selancar secara urut (baris 1, 2, dst).
+            #    Jika GAGAL BACA (sesi habis / tabel tidak muncul) -> pulihkan & ulangi, jangan dianggap "habis".
+            target_info = None
+            diag = {}
+            for percobaan in range(1, 4):
+                diag = {}
                 conn = get_connection()
-                target_info = cari_target_di_tabel_selancar(selancar_page, conn, session_skip_aids=session_skip_aids, kategori=kategori_aktif)
+                target_info = cari_target_di_tabel_selancar(selancar_page, conn, session_skip_aids=session_skip_aids, kategori=kategori_aktif, diag=diag)
                 conn.close()
 
+                while not target_info and not diag.get('error'):
+                    pindah = lanjut_halaman_berikutnya_selancar(selancar_page)
+                    if not pindah:
+                        break
+                    conn = get_connection()
+                    target_info = cari_target_di_tabel_selancar(selancar_page, conn, session_skip_aids=session_skip_aids, kategori=kategori_aktif, diag=diag)
+                    conn.close()
+
+                if target_info or not diag.get('error'):
+                    break
+
+                print(f"\n[SELANCAR-PULIH] Gagal membaca tabel (percobaan {percobaan}/3): {diag.get('error')}")
+                try:
+                    ok_pulih = pulihkan_selancar(selancar_page, kategori=kategori_aktif)
+                except Exception as e_pulih:
+                    print(f"[SSO STOP] {e_pulih}. Login manual diperlukan, batch dihentikan.")
+                    break
+                if not ok_pulih:
+                    time.sleep(10 * percobaan)
+
             if not target_info:
-                print(f"\n[INFO] Tidak ada lagi baris yang perlu dikerjakan di tabel Selancar Kategori {kategori_aktif} saat ini.")
+                if diag.get('error'):
+                    print(f"\n[PERINGATAN] BUKAN 'habis': tabel Selancar gagal dibaca setelah 3x pemulihan ({diag.get('error')}).")
+                    print("             Periksa koneksi/login Selancar lalu jalankan ulang.")
+                else:
+                    print(f"\n[INFO] Tidak ada lagi baris yang perlu dikerjakan di tabel Selancar Kategori {kategori_aktif} saat ini.")
+                    print(f"[INFO] Rincian yang dilewati: {ringkas_diag(diag)}")
+                    print("[INFO] Keterangan: akan_direvisi/terkunci = sedang dipegang user/komputer lain atau sisa sesi lama; "
+                          "final_di_db_* = status final di DB lokal (Selancar bisa saja masih 'belum'); skip_sesi_ini = sudah dicoba di sesi ini.")
                 break
 
             row = target_info['db_row']
@@ -2287,12 +2831,32 @@ def main():
                 pass
 
             # EVALUASI HASIL & STOP-LOSS (G11):
+            if hasil not in ("WAF_BLOCK", "SKIPPED_FASIH_ERROR"):
+                akses_err_berturut = 0
+
             if hasil == "WAF_BLOCK":
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 di_skip += 1
+                akses_err_berturut += 1
                 session_skip_aids.add(aid)
-                print(f"[SKIP] Baris '{nama}' dilewati karena kendala akses. Melanjutkan ke baris berikutnya...")
+                print(f"[SKIP] Baris '{nama}' dilewati karena kendala akses ({akses_err_berturut}/{MAX_ERR_BERTURUT}).")
+                if akses_err_berturut >= MAX_ERR_BERTURUT:
+                    print(f"\n[CIRCUIT BREAKER AKSES] {MAX_ERR_BERTURUT} kendala akses (WAF/FASIH) berturut-turut. Batch dihentikan "
+                          f"agar antrean tidak habis terlewati. Tunggu beberapa menit lalu jalankan ulang.")
+                    break
                 time.sleep(1.5)
+
+            elif hasil == "SKIPPED_FASIH_ERROR":
+                di_skip += 1
+                akses_err_berturut += 1
+                session_skip_aids.discard(aid)  # jangan blacklist: baris valid, hanya aksesnya bermasalah
+                print(f"[AKSES FASIH] Timeout/error pada '{nama}' ({akses_err_berturut}/{MAX_ERR_BERTURUT} berturut-turut).")
+                if akses_err_berturut >= MAX_ERR_BERTURUT:
+                    print(f"\n[CIRCUIT BREAKER AKSES] FASIH bermasalah {MAX_ERR_BERTURUT}x berturut-turut. Batch dihentikan "
+                          f"supaya baris lain tidak ikut terlewati. Cek koneksi/login FASIH lalu jalankan ulang.")
+                    break
+                session_skip_aids.add(aid)  # lewati baris ini di sesi ini, tapi tetap PENDING di DB/Selancar
+                time.sleep(random.uniform(8.0, 15.0))
 
             elif hasil == "SSO_LIMIT_EXCEEDED":
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
@@ -2330,7 +2894,7 @@ def main():
                 conn.close()
                 time.sleep(1.0)
 
-            elif hasil in ["SKIP", "NEED_REVIEW", "SKIPPED_FASIH_ERROR", "KBLI_MISMATCH", "CANCELLED"]:
+            elif hasil in ["SKIP", "NEED_REVIEW", "KBLI_MISMATCH", "CANCELLED"]:
                 di_skip += 1
                 consecutive_errors = 0  # Evaluasi normal bukan error teknis sistem
                 session_skip_aids.add(aid)

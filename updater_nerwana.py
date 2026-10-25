@@ -13,7 +13,9 @@ NERWANA_UPDATE_URL = "https://nerwana-aceh.web.bps.go.id/selancar2026/dc-terkena
 
 def get_sso_credentials():
     """Membaca kredensial SSO dari file sso di direktori proyek."""
-    sso_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sso")
+    folder = os.path.dirname(os.path.abspath(__file__))
+    sso_path = next((os.path.join(folder, n) for n in ("sso", ".sso", "sso.txt")
+                     if os.path.exists(os.path.join(folder, n))), os.path.join(folder, "sso"))
     if os.path.exists(sso_path):
         u, p = "", ""
         with open(sso_path, "r", encoding="utf-8") as f:
@@ -31,6 +33,37 @@ def get_sso_credentials():
     return None, None
 
 SSO_LOGIN_COUNT = 0
+
+KABKOTA_AKTIF = None
+
+def deteksi_kabkota(page):
+    """
+    Wilayah (kabkota) mengikuti AKUN yang login, bukan angka tetap.
+    Urutan: parameter URL -> input/select/link di halaman Selancar -> cache terakhir -> None
+    (None = parameter kabkota tidak dikirim, server memakai wilayah default akun).
+    """
+    global KABKOTA_AKTIF
+    try:
+        q = urllib.parse.parse_qs(urllib.parse.urlparse(page.url).query).get('kabkota')
+        if q and q[0]:
+            KABKOTA_AKTIF = q[0]
+            return KABKOTA_AKTIF
+    except Exception:
+        pass
+    try:
+        v = page.evaluate("""() => {
+            const el = document.querySelector('input[name="kabkota"], select[name="kabkota"]');
+            if (el && el.value) return el.value;
+            const hrefs = [...document.querySelectorAll('a[href*="kabkota="]')].map(a => a.href);
+            for (const h of hrefs) { const m = h.match(/kabkota=([0-9]+)/); if (m) return m[1]; }
+            return null;
+        }""")
+        if v:
+            KABKOTA_AKTIF = str(v)
+    except Exception:
+        pass
+    return KABKOTA_AKTIF
+
 
 def pastikan_login_selancar(page):
     """
@@ -217,7 +250,7 @@ def buka_dan_siapkan_selancar(page, kategori="G"):
     # 2. Periksa apakah URL saat ini sudah berada di dc-terkena-flag dengan filter yang tepat
     parsed = urllib.parse.urlparse(page.url)
     params = urllib.parse.parse_qs(parsed.query)
-    kabkota = params.get('kabkota', ['1175'])[0]
+    kabkota = (deteksi_kabkota(page) or '')
 
     is_correct_filter = (
         "dc-terkena-flag" in parsed.path.lower() and
@@ -228,7 +261,7 @@ def buka_dan_siapkan_selancar(page, kategori="G"):
     )
 
     if not is_correct_filter:
-        target_url = f"{NERWANA_BASE_URL}?sort=nilai_tambah&dir=asc&kabkota={kabkota}&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50"
+        target_url = f"{NERWANA_BASE_URL}?sort=nilai_tambah&dir=asc{('&kabkota=' + kabkota) if kabkota else ''}&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50"
         print(f"[SELANCAR] Mengarahkan ke URL filter DC:")
         print(f"          -> Kategori : {kat}")
         print(f"          -> Flag     : Flag Rasio 3 (rasio_3, kode=1)")
@@ -254,10 +287,12 @@ def buka_dan_siapkan_selancar(page, kategori="G"):
             page.locator('#loading-overlay').wait_for(state="hidden", timeout=15000)
         except Exception:
             pass
-        print(f"[SELANCAR] Tabel data Kategori {kat} (Flag 3) siap di layar!")
+        n_baris = page.locator('#tableEvalProfil tbody tr').count()
+        print(f"[SELANCAR] Tabel Kategori {kat} siap | wilayah(kabkota)={deteksi_kabkota(page) or 'default akun'} | baris di halaman ini={n_baris}")
         return True
     except Exception as e_wait:
         print(f"[SELANCAR-WARN] Menunggu tabel: {e_wait}")
+        print(f"[SELANCAR-WARN] Wilayah(kabkota) terdeteksi: {deteksi_kabkota(page) or 'TIDAK TERDETEKSI'} | URL: {page.url}")
         return False
 
 def refresh_selancar_realtime(page, kategori="G"):
@@ -271,7 +306,7 @@ def refresh_selancar_realtime(page, kategori="G"):
         
         parsed = urllib.parse.urlparse(page.url)
         params = urllib.parse.parse_qs(parsed.query)
-        kabkota = params.get('kabkota', ['1175'])[0]
+        kabkota = (deteksi_kabkota(page) or '')
 
         is_correct_filter = (
             "dc-terkena-flag" in parsed.path.lower() and
@@ -282,7 +317,7 @@ def refresh_selancar_realtime(page, kategori="G"):
         )
 
         if not is_correct_filter:
-            target_url = f"{NERWANA_BASE_URL}?sort=nilai_tambah&dir=asc&kabkota={kabkota}&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50"
+            target_url = f"{NERWANA_BASE_URL}?sort=nilai_tambah&dir=asc{('&kabkota=' + kabkota) if kabkota else ''}&kategori={kat}&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50"
             page.goto(target_url, timeout=30000)
             page.wait_for_load_state("domcontentloaded")
         else:
@@ -311,7 +346,7 @@ def to_float(val, default=0.0):
     except Exception:
         return default
 
-def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="G"):
+def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="G", diag=None):
     """
     Memeriksa baris-baris pada tabel Selancar Kategori terkait (G atau A) yang tampil di layar secara urut:
     - Mencari baris yang tindak lanjutnya masih belum (bukan 'sudah_direvisi') dan tidak terkunci.
@@ -323,10 +358,39 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
     kat = (kategori or "G").upper().strip()
     if session_skip_aids is None:
         session_skip_aids = set()
+    if diag is None:
+        diag = {}
+
+    def _hitung(k):
+        diag[k] = diag.get(k, 0) + 1
 
     try:
-        page.wait_for_selector('#tableEvalProfil tbody tr', timeout=15000)
+        # Deteksi dini: sesi habis / dilempar ke login -> ini BUKAN "tabel kosong"
+        u_now = page.url.lower()
+        if "sso.bps.go.id" in u_now or "/login" in u_now:
+            diag['error'] = "SESI_LOGIN: halaman Selancar/SSO meminta login ulang"
+            return None
+
+        try:
+            page.wait_for_selector('#tableEvalProfil tbody tr', timeout=15000)
+        except Exception as e_wait:
+            # Tabel tidak muncul. Bedakan "memang kosong" vs "gagal memuat"
+            try:
+                kosong = page.locator('text="Tidak ada data"').count() > 0
+            except Exception:
+                kosong = False
+            if kosong:
+                diag['tabel_kosong'] = True
+                return None
+            diag['error'] = f"TABEL_TIDAK_MUNCUL: {str(e_wait)[:120]}"
+            return None
+
         rows = page.locator('#tableEvalProfil tbody tr').all()
+        if len(rows) > 1:
+            kepala = rows[:8]
+            random.shuffle(kepala)   # beberapa akun jalan bersamaan: kurangi rebutan baris yang sama
+            rows = kepala + rows[8:]
+        _hitung('hal_dibaca')
         for tr in rows:
             sim_btn = tr.locator('.dc-sim-btn').first
             if sim_btn.count() == 0:
@@ -335,8 +399,10 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
             nama = sim_btn.get_attribute("data-nama") or ""
             if not aid:
                 continue
+            _hitung('baris_total')
 
             if aid in session_skip_aids:
+                _hitung('skip_sesi_ini')
                 continue
 
             tl_select = tr.locator('select.dc-tl-select').first
@@ -344,6 +410,12 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
             is_terkunci = tl_select.get_attribute("data-terkunci") == "1"
 
             if stat in ["sudah_direvisi", "akan_direvisi"] or is_terkunci:
+                if is_terkunci:
+                    _hitung('terkunci_user_lain')
+                elif stat == "akan_direvisi":
+                    _hitung('akan_direvisi_di_selancar')
+                else:
+                    _hitung('sudah_direvisi_di_selancar')
                 session_skip_aids.add(aid)
                 continue
 
@@ -365,6 +437,7 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 ex_stat = existing['status']
                 # Lewati jika status sudah final (PRD §7.1 & config.STATUS_FINAL)
                 if ex_stat in STATUS_FINAL or ex_stat == 'SUBMITTED':
+                    _hitung(f'final_di_db_{ex_stat}')
                     session_skip_aids.add(aid)
                     continue
                 # Jika sudah di-approve di DB dan nilai barunya lengkap, pakai nilai DB
@@ -391,7 +464,7 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 db_row = {
                     'assignment_id': aid,
                     'nama_usaha': nama,
-                    'kabkota': '1175',
+                    'kabkota': KABKOTA_AKTIF or '',
                     'kategori': kat,
                     'kbli': kbli,
                     'deskripsi_kbli': deskripsi_kbli,
@@ -418,7 +491,162 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 'rasio_selancar': db_row.get('rasio_selancar', to_float(sim_btn.get_attribute("data-rasio"))),
             }
     except Exception as e:
+        diag['error'] = f"EXCEPTION: {str(e)[:150]}"
         print(f"[SELANCAR-ERROR] Gagal membaca baris tabel: {e}")
+    return None
+
+
+def ringkas_diag(diag):
+    """Ringkasan alasan baris dilewati, untuk dicetak saat bot menyimpulkan 'habis'."""
+    if not diag:
+        return "(tidak ada data diagnosa)"
+    kunci = [k for k in diag if k not in ('error', 'tabel_kosong', 'hal_dibaca')]
+    bagian = [f"{k}={diag[k]}" for k in sorted(kunci)]
+    hal = diag.get('hal_dibaca', 0)
+    return f"halaman dibaca={hal} | " + (", ".join(bagian) if bagian else "tidak ada baris terbaca")
+
+
+def pulihkan_selancar(page, kategori="G"):
+    """
+    Pemulihan setelah gagal baca tabel: cek login ulang (SSO), buka ulang URL filter
+    dari halaman 1, set dropdown, tunggu tabel. Mengembalikan True jika tabel siap.
+    """
+    kat = (kategori or "G").upper().strip()
+    try:
+        try:
+            pastikan_login_selancar(page)
+        except Exception as e_login:
+            print(f"[PULIH] Login ulang bermasalah: {e_login}")
+            if "SSO_MANUAL_LOGIN_REQUIRED" in str(e_login):
+                raise
+        parsed = urllib.parse.urlparse(page.url)
+        params = urllib.parse.parse_qs(parsed.query)
+        kabkota = (deteksi_kabkota(page) or '')
+        target_url = (f"{NERWANA_BASE_URL}?sort=nilai_tambah&dir=asc{('&kabkota=' + kabkota) if kabkota else ''}&kategori={kat}"
+                      f"&flag=rasio_3&kode=1&filter_spesifik=none&cari=&per_page=50")
+        page.goto(target_url, timeout=45000)
+        page.wait_for_load_state("domcontentloaded")
+        pastikan_login_selancar(page)
+        verifikasi_dan_set_dropdown_selancar(page, kat, flag="rasio_3", kode="1", filter_spesifik="none")
+        page.wait_for_selector('#tableEvalProfil tbody tr', timeout=30000)
+        try:
+            page.locator('#loading-overlay').wait_for(state="hidden", timeout=10000)
+        except Exception:
+            pass
+        time.sleep(1)
+        return True
+    except Exception as e:
+        if "SSO_MANUAL_LOGIN_REQUIRED" in str(e):
+            raise
+        print(f"[PULIH] Gagal memulihkan Selancar: {e}")
+        return False
+
+def cari_target_verifikasi_di_tabel_selancar(page, conn, pengisi="Farid Akbar Arifandi", session_skip_aids=None, kategori="A"):
+    """
+    Memeriksa baris pada tabel Selancar yang SUDAH direvisi oleh pengisi tertentu (Farid Akbar Arifandi).
+    Digunakan untuk menu verifikasi ulang remark dan kesesuaian nilai di FASIH.
+    """
+    kat = (kategori or "A").upper().strip()
+    if session_skip_aids is None:
+        session_skip_aids = set()
+
+    try:
+        page.wait_for_selector('#tableEvalProfil tbody tr', timeout=15000)
+        rows = page.locator('#tableEvalProfil tbody tr').all()
+        for tr in rows:
+            sim_btn = tr.locator('.dc-sim-btn').first
+            if sim_btn.count() == 0:
+                continue
+            aid = sim_btn.get_attribute("data-aid")
+            nama = sim_btn.get_attribute("data-nama") or ""
+            if not aid:
+                continue
+
+            if aid in session_skip_aids:
+                continue
+
+            tl_select = tr.locator('select.dc-tl-select').first
+            stat = tl_select.input_value() or tl_select.get_attribute("data-prev") or ""
+
+            # Cari elemen teks pengisi tindak lanjut
+            box = tl_select.locator('..')
+            oleh_text = ""
+            if box.locator('.dc-tl-oleh').count() > 0:
+                oleh_text = box.locator('.dc-tl-oleh').first.inner_text().strip()
+            elif tr.locator('.dc-tl-oleh').count() > 0:
+                oleh_text = tr.locator('.dc-tl-oleh').first.inner_text().strip()
+
+            title_info = tl_select.get_attribute("title") or ""
+            gabungan_pengisi = f"{oleh_text} {title_info}".lower()
+
+            # Hanya ambil yang cocok dengan nama pengisi (Farid Akbar Arifandi)
+            if pengisi.lower() not in gabungan_pengisi:
+                continue
+
+            # Periksa DB lokal jika ada
+            existing = None
+            if aid and nama:
+                existing = conn.execute(
+                    "SELECT * FROM kasus_nerwana WHERE assignment_id = ? AND nama_usaha = ?",
+                    (aid, nama)
+                ).fetchone()
+            if not existing and aid:
+                existing = conn.execute(
+                    "SELECT * FROM kasus_nerwana WHERE assignment_id = ?",
+                    (aid,)
+                ).fetchone()
+
+            db_row = None
+            if existing:
+                db_row = dict(existing)
+            else:
+                link_fasih = sim_btn.get_attribute("data-link") or ""
+                rasio_selancar = to_float(sim_btn.get_attribute("data-rasio"))
+                meta_text = sim_btn.get_attribute("data-meta") or ""
+                data_kunci = tl_select.get_attribute("data-kunci") or ""
+
+                kbli = ""
+                deskripsi_kbli = ""
+                m = re.search(r'KBLI\s*([0-9A-Z]+)\s*-\s*(.+)', meta_text, re.I)
+                if m:
+                    kbli = m.group(1).strip()
+                    deskripsi_kbli = m.group(2).strip()
+                else:
+                    kbli = meta_text.strip()
+
+                db_row = {
+                    'assignment_id': aid,
+                    'nama_usaha': nama,
+                    'kabkota': KABKOTA_AKTIF or '',
+                    'kategori': kat,
+                    'kbli': kbli,
+                    'deskripsi_kbli': deskripsi_kbli,
+                    'link_fasih': link_fasih,
+                    'rasio_selancar': rasio_selancar,
+                    'tindak_lanjut': stat,
+                    'tindak_lanjut_oleh': oleh_text or pengisi,
+                    'data_kunci': data_kunci,
+                    'status': 'PENDING',
+                }
+
+            link_btn = tr.locator('a.dc-link-btn').first
+            if link_btn.count() == 0:
+                link_btn = tr.locator('a[href*="assignment"]').first
+
+            return {
+                'tr': tr,
+                'link_btn': link_btn,
+                'tl_select': tl_select,
+                'aid': aid,
+                'nama': nama,
+                'stat': stat,
+                'oleh': oleh_text,
+                'data_kunci': tl_select.get_attribute("data-kunci") or "",
+                'db_row': db_row,
+                'rasio_selancar': db_row.get('rasio_selancar', to_float(sim_btn.get_attribute("data-rasio"))),
+            }
+    except Exception as e:
+        print(f"[SELANCAR-ERROR] Gagal membaca baris verifikasi tabel: {e}")
     return None
 
 def lanjut_halaman_berikutnya_selancar(page):

@@ -1,5 +1,7 @@
 # Kredensial & Informasi Sensitif
 sso
+.sso
+sso.txt
 .env
 *.env
 
@@ -9,8 +11,7 @@ sso
 *.db
 *.sqlite
 *.sqlite3
-# Database & Review usulan untuk sinkronisasi tim
-!data_cleaning.db
+# review_usulan tetap dibagikan; database dibuat otomatis & lokal per komputer/akun
 !review_usulan.xlsx
 
 # File Dump HTML Scraping / Recon

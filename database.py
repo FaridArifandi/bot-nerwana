@@ -163,5 +163,28 @@ def log_audit(assignment_id, nama_usaha, action, nilai_lama=None, nilai_baru=Non
     conn.commit()
     conn.close()
 
+def get_target_verifikasi(kategori="A", pengisi="Farid Akbar Arifandi", hanya_belum_verif=True, limit=50):
+    """
+    Mengambil daftar baris yang dikerjakan oleh pengisi tertentu (Farid Akbar Arifandi)
+    untuk keperluan verifikasi ulang catatan/remark dan kesesuaian nilai di FASIH.
+    """
+    conn = get_connection()
+    query = "SELECT * FROM kasus_nerwana WHERE tindak_lanjut_oleh LIKE ?"
+    params = [f"%{pengisi}%"]
+    
+    if kategori and kategori.upper() != "SEMUA":
+        query += " AND UPPER(kategori) = ?"
+        params.append(kategori.upper().strip())
+        
+    if hanya_belum_verif:
+        query += " AND (remark_terverifikasi = 0 OR remark_terverifikasi IS NULL)"
+        
+    query += " ORDER BY assignment_id ASC LIMIT ?"
+    params.append(limit)
+    
+    rows = conn.execute(query, params).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
 if __name__ == "__main__":
     init_db()
