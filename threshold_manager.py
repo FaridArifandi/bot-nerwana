@@ -58,20 +58,34 @@ def get_threshold(kategori, kbli="", skala="mikro_kecil"):
             item = data["kategori_g_kbli5"][kbli_str[:5]]
             ntb = item["ntb_output"]
             cogs = item["cogs"]
-            t_min = ntb["min"] if ntb["min"] is not None else 0.64
-            t_max = ntb["max"] if ntb["max"] is not None else 0.78
-            t_target = ntb["avg"] if ntb["avg"] is not None else round((t_min + t_max) / 2, 4)
+            level = f"KBLI_5 ({kbli_str[:5]})"
+            # Lampiran threshold: "NTB/Output rentang nol - pakai acuan Kategori G"
+            if ntb["min"] is None or ntb["max"] is None or ntb["min"] == ntb["max"]:
+                kat_g = data.get("kategori", {}).get("G", {})
+                t_min = kat_g.get("min", 0.64)
+                t_max = kat_g.get("max", 0.78)
+                t_target = round((t_min + t_max) / 2, 4)
+                level += " NTB:acuan Kat.G"
+            else:
+                t_min = ntb["min"]
+                t_max = ntb["max"]
+                t_target = ntb["avg"] if ntb["avg"] is not None else round((t_min + t_max) / 2, 4)
+            # Lampiran threshold: "COGS rentang nol - tidak dipakai"
+            if cogs.get("min") is None or cogs.get("max") is None or cogs["min"] == cogs["max"]:
+                c_min = c_max = c_target = None
+            else:
+                c_min, c_max, c_target = cogs.get("min"), cogs.get("max"), cogs.get("avg")
             return {
                 "min": t_min,
                 "max": t_max,
                 "target": t_target,
-                "level": f"KBLI_5 ({kbli_str[:5]})",
+                "level": level,
                 "uraian": item.get("uraian", ""),
-                "cogs_min": cogs.get("min"),
-                "cogs_max": cogs.get("max"),
-                "cogs_target": cogs.get("avg")
+                "cogs_min": c_min,
+                "cogs_max": c_max,
+                "cogs_target": c_target
             }
-            
+
         # 1b. Cek 3 Digit
         if len(kbli_str) >= 3 and kbli_str[:3] in data.get("kategori_g_kbli3", {}):
             item = data["kategori_g_kbli3"][kbli_str[:3]]

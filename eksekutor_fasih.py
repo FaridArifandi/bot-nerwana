@@ -1844,8 +1844,13 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
 
         print(f"[EVALUASI] Aksi: {hasil.aksi} | Alasan: {hasil.alasan}")
 
+        # NTB/Output & COGS sama-sama dalam rentang -> hanya catatan #1, tanpa ubah nilai
+        catat_saja = bool(hasil.get('catat_saja'))
+        if catat_saja:
+            print("[CATAT-SAJA] Nilai sudah wajar. Hanya menambah catatan #1 (tanpa ubah nilai), lalu tandai 'Sudah direvisi'.")
+
         # 8. Tangani Hasil Evaluasi:
-        if hasil.aksi in ["SKIP", "NEED_REVIEW"]:
+        if hasil.aksi in ["SKIP", "NEED_REVIEW"] and not catat_saja:
             conn.execute("""
                 UPDATE kasus_nerwana 
                 SET status = ?, alasan_skip = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
@@ -1857,45 +1862,49 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
             return hasil.aksi, hasil.alasan
 
-        # Skenario APPLY: Ubah TEPAT SATU field
-        faktor_txt = f" (Faktor: {hasil.faktor})" if hasil.faktor else f" ({hasil.operasi})"
-        print(f"[APPLY] Field target: '{hasil.field}' dari {hasil.nilai_lama:,.0f} -> {hasil.nilai_baru:,.0f}{faktor_txt}")
+        if not catat_saja:
+            # Skenario APPLY: Ubah TEPAT SATU field
+            faktor_txt = f" (Faktor: {hasil.faktor})" if hasil.faktor else f" ({hasil.operasi})"
+            print(f"[APPLY] Field target: '{hasil.field}' dari {hasil.nilai_lama:,.0f} -> {hasil.nilai_baru:,.0f}{faktor_txt}")
 
-        # 9. Mengisi Field dengan Readback (Tugas 3 / G9)
-        input_loc = data_fasih['field_locators'].get(hasil.field)
-        if not input_loc or input_loc.count() == 0:
-            # Fallback jika locator dari baca_nilai tidak valid
-            c_fallback = page.locator(f'[id*="{hasil.field}"]:visible, [id*="pendapatan"]:visible').first
-            if c_fallback.count() > 0:
-                input_loc = c_fallback.locator('input[type="text"]').first
+            # 9. Mengisi Field dengan Readback (Tugas 3 / G9)
+            input_loc = data_fasih['field_locators'].get(hasil.field)
+            if not input_loc or input_loc.count() == 0:
+                # Fallback jika locator dari baca_nilai tidak valid
+                c_fallback = page.locator(f'[id*="{hasil.field}"]:visible, [id*="pendapatan"]:visible').first
+                if c_fallback.count() > 0:
+                    input_loc = c_fallback.locator('input[type="text"]').first
 
-        if not input_loc or input_loc.count() == 0:
-            err_loc = f"Input locator untuk field '{hasil.field}' tidak ditemukan"
-            print(f"[NEED_REVIEW] {err_loc}")
-            conn.execute("""
-                UPDATE kasus_nerwana 
-                SET status = 'NEED_REVIEW', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
-                WHERE assignment_id = ? AND nama_usaha = ?
-            """, (err_loc, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
-            conn.commit()
-            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
-            return "NEED_REVIEW", err_loc
+            if not input_loc or input_loc.count() == 0:
+                err_loc = f"Input locator untuk field '{hasil.field}' tidak ditemukan"
+                print(f"[NEED_REVIEW] {err_loc}")
+                conn.execute("""
+                    UPDATE kasus_nerwana 
+                    SET status = 'NEED_REVIEW', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                    WHERE assignment_id = ? AND nama_usaha = ?
+                """, (err_loc, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+                conn.commit()
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+                return "NEED_REVIEW", err_loc
 
-        ok_rb, val_rb = isi_field_dengan_readback(page, input_loc, hasil.nilai_baru, nilai_lama=hasil.nilai_lama)
-        if not ok_rb:
-            err_rb = f"Readback mismatch pada {hasil.field}: terbaca '{val_rb}' != target '{hasil.nilai_baru:,.0f}'"
-            print(f"[READBACK_MISMATCH] {err_rb}")
-            conn.execute("""
-                UPDATE kasus_nerwana 
-                SET status = 'READBACK_MISMATCH', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
-                WHERE assignment_id = ? AND nama_usaha = ?
-            """, (err_rb, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
-            conn.commit()
-            log_audit(aid, nama, "READBACK_MISMATCH", status_sebelumnya="PENDING", status_baru="READBACK_MISMATCH", pesan=err_rb)
-            set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
-            return "READBACK_MISMATCH", val_rb
+            ok_rb, val_rb = isi_field_dengan_readback(page, input_loc, hasil.nilai_baru, nilai_lama=hasil.nilai_lama)
+            if not ok_rb:
+                err_rb = f"Readback mismatch pada {hasil.field}: terbaca '{val_rb}' != target '{hasil.nilai_baru:,.0f}'"
+                print(f"[READBACK_MISMATCH] {err_rb}")
+                conn.execute("""
+                    UPDATE kasus_nerwana 
+                    SET status = 'READBACK_MISMATCH', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                    WHERE assignment_id = ? AND nama_usaha = ?
+                """, (err_rb, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+                conn.commit()
+                log_audit(aid, nama, "READBACK_MISMATCH", status_sebelumnya="PENDING", status_baru="READBACK_MISMATCH", pesan=err_rb)
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+                return "READBACK_MISMATCH", val_rb
 
         time.sleep(0.5)
+
+        if catat_saja:
+            input_loc = None
 
         # 10. Tambah Catatan / Remark (Tugas 5 & PRD §7.3)
         c_pendapatan = c_pendapatan_cek or cari_container_isian_27a(page, idx=idx_usaha)
@@ -1931,7 +1940,10 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         # 12. Konfirmasi Interaktif (Tugas 4 / G12)
         if interaktif:
             print("\n" + "-" * 60)
-            print(f"[KONFIRMASI MANUAL] Usulan: Field '{hasil.field}' | {hasil.nilai_lama:,.0f} -> {hasil.nilai_baru:,.0f}")
+            if catat_saja:
+                print("[KONFIRMASI MANUAL] Usulan: hanya catatan #1 (tidak ada nilai yang diubah)")
+            else:
+                print(f"[KONFIRMASI MANUAL] Usulan: Field '{hasil.field}' | {hasil.nilai_lama:,.0f} -> {hasil.nilai_baru:,.0f}")
             if dry_run:
                 print("Mode: DRY-RUN (Tombol Kirim TIDAK akan ditekan)")
                 jawab = input("Apakah nilai sudah sesuai dan ingin menyelesaikan dry-run? [y/n]: ").strip().lower()
@@ -1950,7 +1962,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
         time.sleep(0.5)
 
         # 13. Eksekusi Submit atau Dry-run (Tugas 5)
-        nilai_baru_dict = {hasil.field: hasil.nilai_baru}
+        nilai_baru_dict = {} if catat_saja else {hasil.field: hasil.nilai_baru}
         if dry_run:
             try:
                 ss_path = os.path.join(SCREENSHOTS_DIR, f"dryrun_{aid}_{int(time.time())}.png")

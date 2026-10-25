@@ -242,6 +242,47 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
 
     # G1: Jika rasio FASIH sudah dalam rentang threshold
     if MIN_RATIO <= rasio <= MAX_RATIO:
+        # Kategori G: periksa juga COGS (Biaya Pembelian / Pendapatan) terhadap rentang KBLI.
+        c_min, c_max = thresh.get('cogs_min'), thresh.get('cogs_max')
+        if kat == "G":
+            if c_min is not None and c_max is not None and pbj > 0:
+                cogs = beli / pbj
+                cogs_label = f"COGS {cogs:.4f} [{c_min:.4f} - {c_max:.4f}]"
+                cogs_ok = (c_min <= cogs <= c_max)
+            else:
+                # Lampiran: "COGS rentang nol - tidak dipakai" -> cukup NTB/Output
+                cogs_label = "COGS tidak dipakai untuk KBLI ini"
+                cogs_ok = True
+            if cogs_ok:
+                # NTB/Output dan COGS sama-sama dalam rentang: tidak ada nilai yang diubah,
+                # tetapi tetap diberi catatan #1 di FASIH dan Selancar ditandai 'sudah direvisi'.
+                return HasilEvaluasi({
+                    'status': 'SKIP',
+                    'catat_saja': True,
+                    'field': None,
+                    'nilai_lama': None,
+                    'nilai_baru': None,
+                    'rasio_lama': rasio,
+                    'rasio_baru': rasio,
+                    'alasan': f"NTB/Output dan COGS sama-sama dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}; {cogs_label}). Hanya catatan #1, tanpa ubah nilai.",
+                    'kode_catatan': "#1",
+                    'acuan_threshold': THRESH_LABEL,
+                    'operasi': None,
+                    'faktor': None
+                })
+            return HasilEvaluasi({
+                'status': 'SKIP',
+                'field': None,
+                'nilai_lama': None,
+                'nilai_baru': None,
+                'rasio_lama': rasio,
+                'rasio_baru': rasio,
+                'alasan': f"NTB/Output dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}) tetapi {cogs_label} di luar rentang. Tidak diubah otomatis.",
+                'kode_catatan': "",
+                'acuan_threshold': THRESH_LABEL,
+                'operasi': None,
+                'faktor': None
+            })
         return HasilEvaluasi({
             'status': 'SKIP',
             'field': None,
