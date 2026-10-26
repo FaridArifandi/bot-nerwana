@@ -1,0 +1,13 @@
+# File ini membuat 'Download ZIP' dari GitHub tidak membawa cache/rahasia lokal
+data_cleaning.db export-ignore
+*.db export-ignore
+.mesin_id export-ignore
+sso export-ignore
+.sso export-ignore
+sso.txt export-ignore
+screenshots export-ignore
+browser_data export-ignore
+chrome_debug_profile export-ignore
+__pycache__ export-ignore
+*.bak_* export-ignore
+*.pyc export-ignore

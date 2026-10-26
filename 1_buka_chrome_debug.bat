@@ -1,5 +1,6 @@
 @echo off
 title Membuka Google Chrome Remote Debugging
+python "%~dp0bersihkan_cache.py" 2>nul
 echo =================================================================
 echo Membuka Google Chrome dengan Remote Debugging Port 9222...
 echo =================================================================

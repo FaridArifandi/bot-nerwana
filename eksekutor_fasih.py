@@ -82,6 +82,7 @@ def start_debug_chrome():
 WAF_LOCK_FILE = os.path.join(BASE_DIR, ".waf_lock")
 COOLDOWN_SECONDS = 30 * 60  # 30 menit
 SSO_FASIH_LOGIN_COUNT = 0
+SSO_FASIH_GAGAL = 0   # login SSO berturut-turut yang tidak berhasil keluar dari halaman SSO
 
 def catat_waf_block(bot_code=""):
     """Pencatatan lock WAF dinonaktifkan."""
@@ -219,7 +220,7 @@ def selesaikan_sso_pada_fasih(page, selancar_page=None, link_btn=None, max_wait_
     bukan langsung ke assignment, fungsi ini akan mengulang klik tombol link assignment dari Selancar.
     Login otomatis maksimal 1 kali per sesi untuk mencegah pembatasan akun/IP.
     """
-    global SSO_FASIH_LOGIN_COUNT
+    global SSO_FASIH_LOGIN_COUNT, SSO_FASIH_GAGAL
     start = time.time()
     while time.time() - start < max_wait_sec:
         try:
@@ -234,9 +235,9 @@ def selesaikan_sso_pada_fasih(page, selancar_page=None, link_btn=None, max_wait_
 
             # 1. KONDISI: Berada di SSO BPS (sso.bps.go.id)
             if "sso.bps.go.id" in url or page.locator('#kc-login, button:has-text("Log In")').count() > 0:
-                if SSO_FASIH_LOGIN_COUNT >= 1:
+                if SSO_FASIH_GAGAL >= 2:
                     print("\n" + "!" * 65)
-                    print("[SSO ERROR] Tab FASIH meminta login ulang setelah 1 kali login otomatis.")
+                    print("[SSO ERROR] Login SSO otomatis di FASIH gagal 2x berturut-turut (cek username/password di file sso).")
                     print("Silakan lakukan login SSO secara manual di browser Chrome terlebih dahulu.")
                     print("!" * 65 + "\n")
                     return "SSO_LIMIT_EXCEEDED", None
@@ -278,7 +279,9 @@ def selesaikan_sso_pada_fasih(page, selancar_page=None, link_btn=None, max_wait_
                 try:
                     page.wait_for_url(lambda u: "sso.bps.go.id" not in u.lower(), timeout=20000)
                     print("[SSO] Berhasil keluar dari SSO!")
+                    SSO_FASIH_GAGAL = 0
                 except Exception:
+                    SSO_FASIH_GAGAL += 1
                     time.sleep(3)
                 time.sleep(2.5)
 
@@ -1721,7 +1724,7 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
     """
     aid = row['assignment_id']
     nama = row['nama_usaha']
-    kode_catatan = row.get('kode_catatan') or "#1"
+    kode_catatan = "#1"  # remark standar; kode lama di DB (mis. #DC_01) diabaikan
     
     print("\n" + "=" * 65)
     print(f"EKSEKUSI ASSIGNMENT: {aid} (TARGET KATEGORI {kategori})")
@@ -1839,7 +1842,8 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
             kategori=kat_fasih,
             kbli=kbli_fasih,
             blok=blok_jenis,
-            rasio_selancar=rasio_selancar
+            rasio_selancar=rasio_selancar,
+            multi_field=True
         )
 
         print(f"[EVALUASI] Aksi: {hasil.aksi} | Alasan: {hasil.alasan}")
@@ -1903,6 +1907,35 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
 
         time.sleep(0.5)
 
+        # Field tambahan (mis. Biaya Produksi ikut disesuaikan bersama Biaya Pembelian)
+        for tb in ([] if catat_saja else (hasil.get('tambahan') or [])):
+            loc_tb = data_fasih['field_locators'].get(tb['field'])
+            if not loc_tb or loc_tb.count() == 0:
+                err_tb = f"Input locator untuk field tambahan '{tb['field']}' tidak ditemukan"
+                print(f"[NEED_REVIEW] {err_tb}")
+                conn.execute("""
+                    UPDATE kasus_nerwana 
+                    SET status = 'NEED_REVIEW', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                    WHERE assignment_id = ? AND nama_usaha = ?
+                """, (err_tb, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+                conn.commit()
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+                return "NEED_REVIEW", err_tb
+            ok_tb, val_tb = isi_field_dengan_readback(page, loc_tb, tb['nilai_baru'], nilai_lama=tb['nilai_lama'])
+            if not ok_tb:
+                err_tb = f"Readback mismatch pada {tb['field']}: terbaca '{val_tb}' != target '{tb['nilai_baru']:,.0f}'"
+                print(f"[READBACK_MISMATCH] {err_tb}")
+                conn.execute("""
+                    UPDATE kasus_nerwana 
+                    SET status = 'READBACK_MISMATCH', alasan_review = ?, nilai_lama_fasih = ?, blok = ?, evaluasi_at = ?
+                    WHERE assignment_id = ? AND nama_usaha = ?
+                """, (err_tb, json.dumps(nilai_dict), blok_jenis, datetime.now().isoformat(), aid, nama))
+                conn.commit()
+                log_audit(aid, nama, "READBACK_MISMATCH", status_sebelumnya="PENDING", status_baru="READBACK_MISMATCH", pesan=err_tb)
+                set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
+                return "READBACK_MISMATCH", val_tb
+            time.sleep(0.3)
+
         if catat_saja:
             input_loc = None
 
@@ -1963,6 +1996,8 @@ def eksekusi_baris(page, row, dry_run=True, interaktif=False, isi_catatan=False,
 
         # 13. Eksekusi Submit atau Dry-run (Tugas 5)
         nilai_baru_dict = {} if catat_saja else {hasil.field: hasil.nilai_baru}
+        for tb in ([] if catat_saja else (hasil.get('tambahan') or [])):
+            nilai_baru_dict[tb['field']] = tb['nilai_baru']
         if dry_run:
             try:
                 ss_path = os.path.join(SCREENSHOTS_DIR, f"dryrun_{aid}_{int(time.time())}.png")
@@ -2072,7 +2107,7 @@ def verifikasi_dan_resubmit_baris(page, row, dry_run=True, interaktif=False, ner
     """
     aid = row['assignment_id']
     nama = row['nama_usaha']
-    kode_catatan = row.get('kode_catatan') or "#1"
+    kode_catatan = "#1"  # remark standar; kode lama di DB (mis. #DC_01) diabaikan
 
     print("\n" + "=" * 65)
     print(f"VERIFIKASI ULANG ASSIGNMENT: {aid} (KATEGORI {kategori})")
@@ -2540,7 +2575,7 @@ def main_verifikasi_farid():
             elif hasil == "NEED_REVIEW":
                 stat_need_review += 1
                 consecutive_errors = 0
-            elif hasil in ["SKIPPED_FASIH_ERROR", "SKIP"]:
+            elif hasil in ["SKIPPED_FASIH_ERROR", "SKIP", "FAILED"]:
                 stat_skip += 1
                 consecutive_errors = 0
             elif hasil == "CANCELLED":
@@ -2555,10 +2590,6 @@ def main_verifikasi_farid():
                 break
             else:
                 stat_gagal += 1
-                consecutive_errors += 1
-                if consecutive_errors >= MAX_ERR_BERTURUT:
-                    print(f"\n[CIRCUIT BREAKER] Terjadi {MAX_ERR_BERTURUT} error berturut-turut. Menghentikan proses.")
-                    break
 
             jeda = random.uniform(JEDA_ANTAR_ASSIGNMENT_MIN, JEDA_ANTAR_ASSIGNMENT_MAX)
             time.sleep(jeda)
@@ -2768,7 +2799,7 @@ def main():
             # 2.5 Ubah status di Selancar menjadi 'Akan direvisi' sebelum membuka tab FASIH
             print(f"[SELANCAR] Menandai assignment '{nama}' (AID: {aid}) menjadi 'Akan direvisi' sebelum membuka FASIH...")
             set_tindak_lanjut_selancar(target_info, nerwana_updater, status="akan_direvisi")
-            time.sleep(random.uniform(1.2, 1.8))
+            time.sleep(random.uniform(0.4, 0.8))
 
             # 3. Buka tab FASIH dari baris tabel di Selancar
             for pg in context.pages:
@@ -2781,7 +2812,7 @@ def main():
 
             print("[SELANCAR] Membuka tab FASIH dari baris tabel Selancar...")
             link_btn.scroll_into_view_if_needed()
-            time.sleep(random.uniform(1.2, 2.0))
+            time.sleep(random.uniform(0.3, 0.6))
             try:
                 with context.expect_page(timeout=20000) as new_page_info:
                     link_btn.click()
@@ -2796,10 +2827,11 @@ def main():
                 print("[ERROR] Gagal membuka/menghubungkan tab FASIH. Mencoba baris berikutnya...")
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
                 gagal += 1
-                consecutive_errors += 1
-                if consecutive_errors >= MAX_ERR_BERTURUT:
-                    print(f"\n[CIRCUIT BREAKER G11] Menghentikan batch karena {MAX_ERR_BERTURUT} error teknis berturut-turut!")
-                    break
+                session_skip_aids.add(aid)
+                try:
+                    log_audit(aid, nama, "FASIH_ERROR", status_sebelumnya="PENDING", status_baru="PENDING", pesan="Tab FASIH tidak bisa dibuka")
+                except Exception:
+                    pass
                 continue
 
             # Tunggu halaman FASIH selesai initial load/redirect
@@ -2807,7 +2839,7 @@ def main():
                 fasih_page.wait_for_load_state("domcontentloaded", timeout=15000)
             except Exception:
                 pass
-            time.sleep(random.uniform(1.5, 2.5))
+            time.sleep(random.uniform(0.6, 1.0))
 
             # Konfirmasi interaktif hanya aktif jika user memilih mode interaktif di menu utama (pilihan 1 atau 2)
             # Pada mode batch (pilihan 3 atau 4), bot langsung mengedit dan mengeksekusi secara otomatis
@@ -2851,24 +2883,16 @@ def main():
                 di_skip += 1
                 akses_err_berturut += 1
                 session_skip_aids.add(aid)
-                print(f"[SKIP] Baris '{nama}' dilewati karena kendala akses ({akses_err_berturut}/{MAX_ERR_BERTURUT}).")
-                if akses_err_berturut >= MAX_ERR_BERTURUT:
-                    print(f"\n[CIRCUIT BREAKER AKSES] {MAX_ERR_BERTURUT} kendala akses (WAF/FASIH) berturut-turut. Batch dihentikan "
-                          f"agar antrean tidak habis terlewati. Tunggu beberapa menit lalu jalankan ulang.")
-                    break
+                print(f"[SKIP] Baris '{nama}' dilewati karena kendala akses. Lanjut ke baris berikutnya...")
                 time.sleep(1.5)
 
             elif hasil == "SKIPPED_FASIH_ERROR":
                 di_skip += 1
                 akses_err_berturut += 1
                 session_skip_aids.discard(aid)  # jangan blacklist: baris valid, hanya aksesnya bermasalah
-                print(f"[AKSES FASIH] Timeout/error pada '{nama}' ({akses_err_berturut}/{MAX_ERR_BERTURUT} berturut-turut).")
-                if akses_err_berturut >= MAX_ERR_BERTURUT:
-                    print(f"\n[CIRCUIT BREAKER AKSES] FASIH bermasalah {MAX_ERR_BERTURUT}x berturut-turut. Batch dihentikan "
-                          f"supaya baris lain tidak ikut terlewati. Cek koneksi/login FASIH lalu jalankan ulang.")
-                    break
+                print(f"[AKSES FASIH] '{nama}' tidak bisa dibuka (timeout/error/forbidden). Dilewati, lanjut baris berikutnya.")
                 session_skip_aids.add(aid)  # lewati baris ini di sesi ini, tapi tetap PENDING di DB/Selancar
-                time.sleep(random.uniform(8.0, 15.0))
+                time.sleep(random.uniform(1.5, 3.0))
 
             elif hasil == "SSO_LIMIT_EXCEEDED":
                 set_tindak_lanjut_selancar(target_info, nerwana_updater, status=target_info.get('stat', ''))
@@ -2915,24 +2939,24 @@ def main():
                     break
                 time.sleep(random.uniform(1.5, 3.0))
 
-            elif hasil in STATUS_ERROR_TEKNIS:
-                # Tugas 4 (G11): Error teknis (READBACK_MISMATCH, REMARK_FAILED, FAILED)
+            elif hasil == "FAILED":
+                # Baris tidak bisa diproses (mis. form/Blok tidak terbuka di akun ini): lewati, lanjut cek semua baris
                 gagal += 1
-                consecutive_errors += 1
                 session_skip_aids.add(aid)
-                print(f"[STOP-LOSS CHECK] Error teknis berturut-turut: {consecutive_errors}/{MAX_ERR_BERTURUT} (Status: {hasil})")
-                if consecutive_errors >= MAX_ERR_BERTURUT:
-                    print(f"\n[CIRCUIT BREAKER G11] Menghentikan batch karena {MAX_ERR_BERTURUT} error teknis berturut-turut!")
-                    break
-                time.sleep(2.0)
+                print(f"[SKIP] Baris '{nama}' gagal diproses (FAILED). Dilewati, lanjut baris berikutnya.")
+                time.sleep(random.uniform(1.5, 3.0))
+
+            elif hasil in STATUS_ERROR_TEKNIS:
+                # Tugas 4 (G11): Error penulisan nilai (READBACK_MISMATCH, REMARK_FAILED) tetap jadi pengaman
+                gagal += 1
+                session_skip_aids.add(aid)
+                print(f"[SKIP] Baris '{nama}' dilewati (Status: {hasil}). Lanjut baris berikutnya.")
+                time.sleep(1.0)
 
             else:
                 gagal += 1
-                consecutive_errors += 1
                 session_skip_aids.add(aid)
-                if consecutive_errors >= MAX_ERR_BERTURUT:
-                    print(f"\n[CIRCUIT BREAKER G11] Menghentikan batch karena {MAX_ERR_BERTURUT} error teknis berturut-turut!")
-                    break
+                print(f"[SKIP] Hasil tak dikenal '{hasil}' untuk '{nama}'. Dilewati.")
                 if pilihan in ["1", "2"]:
                     break
 
@@ -2946,5 +2970,10 @@ def main():
         print("=" * 65)
 
 if __name__ == "__main__":
+    try:
+        from bersihkan_cache import bersihkan
+        bersihkan()
+    except Exception as _e_bersih:
+        print(f"[BERSIH-CACHE] dilewati: {_e_bersih}")
     main()
 

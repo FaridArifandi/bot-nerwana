@@ -15,6 +15,7 @@ if %errorlevel% neq 0 (
     exit /b
 )
 
+python bersihkan_cache.py 2>nul
 echo Menjalankan bot (eksekutor_fasih.py)...
 echo =================================================================
 python eksekutor_fasih.py

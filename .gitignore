@@ -42,3 +42,8 @@ env/
 # Editor / IDE Settings
 .vscode/
 .idea/
+
+# Cache lokal per komputer
+.mesin_id
+*.bak_*
+*.bat.bak_*

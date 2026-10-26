@@ -33,6 +33,7 @@ def get_sso_credentials():
     return None, None
 
 SSO_LOGIN_COUNT = 0
+SSO_LOGIN_GAGAL = 0   # login SSO berturut-turut yang tidak berhasil keluar dari halaman SSO
 
 KABKOTA_AKTIF = None
 
@@ -70,15 +71,15 @@ def pastikan_login_selancar(page):
     Memastikan halaman Selancar login penuh.
     Jika mental ke halaman login Selancar atau SSO BPS, melakukan login otomatis (maksimal 1 kali per sesi).
     """
-    global SSO_LOGIN_COUNT
+    global SSO_LOGIN_COUNT, SSO_LOGIN_GAGAL
     for loop in range(3):
         url = page.url.lower()
 
         # 1. Jika di SSO BPS
         if "sso.bps.go.id" in url or page.locator('#kc-login, button:has-text("Log In")').count() > 0:
-            if SSO_LOGIN_COUNT >= 1:
+            if SSO_LOGIN_GAGAL >= 2:
                 print("\n" + "!" * 65)
-                print("[SSO ERROR] Sesi SSO meminta login ulang setelah 1 kali login otomatis.")
+                print("[SSO ERROR] Login SSO otomatis gagal 2x berturut-turut (cek username/password di file sso).")
                 print("Silakan lakukan login SSO secara manual di browser Chrome terlebih dahulu.")
                 print("!" * 65 + "\n")
                 raise Exception("SSO_MANUAL_LOGIN_REQUIRED")
@@ -117,8 +118,9 @@ def pastikan_login_selancar(page):
             print("[SELANCAR-SSO] Menunggu redirect kembali ke Selancar...")
             try:
                 page.wait_for_url(lambda u: "sso.bps.go.id" not in u.lower(), timeout=30000)
+                SSO_LOGIN_GAGAL = 0
             except Exception:
-                pass
+                SSO_LOGIN_GAGAL += 1
             time.sleep(3)
             continue
 
@@ -331,7 +333,7 @@ def refresh_selancar_realtime(page, kategori="G"):
             page.locator('#loading-overlay').wait_for(state="hidden", timeout=10000)
         except Exception:
             pass
-        time.sleep(1)
+        time.sleep(0.3)
         return True
     except Exception as e:
         print(f"[SELANCAR-WARN] Gagal refresh real-time: {e}")
@@ -346,14 +348,32 @@ def to_float(val, default=0.0):
     except Exception:
         return default
 
+# Satu kali evaluate membaca SEMUA baris tabel (jauh lebih cepat daripada ratusan panggilan locator)
+_JS_BACA_BARIS = """() => Array.from(document.querySelectorAll('#tableEvalProfil tbody tr')).map((tr, i) => {
+    const b = tr.querySelector('.dc-sim-btn');
+    if (!b) return null;
+    const s = tr.querySelector('select.dc-tl-select');
+    return {
+        i: i,
+        aid: b.getAttribute('data-aid') || '',
+        nama: b.getAttribute('data-nama') || '',
+        link: b.getAttribute('data-link') || '',
+        rasio: b.getAttribute('data-rasio') || '',
+        meta: b.getAttribute('data-meta') || '',
+        stat: s ? (s.value || s.getAttribute('data-prev') || '') : '',
+        terkunci: s ? s.getAttribute('data-terkunci') === '1' : false,
+        kunci: s ? (s.getAttribute('data-kunci') || '') : ''
+    };
+}).filter(x => x)"""
+
+
 def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="G", diag=None):
     """
-    Memeriksa baris-baris pada tabel Selancar Kategori terkait (G atau A) yang tampil di layar secara urut:
-    - Mencari baris yang tindak lanjutnya masih belum (bukan 'sudah_direvisi') dan tidak terkunci.
-    - Menghindari baris yang sudah selesai dikerjakan, error di FASIH, atau tidak butuh perbaikan.
-    - Jika baris sudah berstatus APPROVED di DB, gunakan usulan tersebut.
-    - Jika belum ada di DB / belum di-review, hitung usulan penyesuaian secara live on-the-fly via calculate_usulan(..., kategori).
-    Mengembalikan dict informasi target jika ditemukan, atau None.
+    Mencari baris pertama di tabel Selancar yang masih bisa dikerjakan:
+    - bukan 'sudah_direvisi' / 'akan_direvisi' / terkunci user lain,
+    - belum dicoba di sesi ini, belum final di DB lokal, dan belum berkali-kali gagal dibuka.
+    Nilai kuesioner TIDAK dihitung di sini: Selancar hanya antrean, nilai dibaca langsung dari FASIH.
+    diag (dict) diisi alasan baris dilewati / error baca tabel untuk ringkasan.
     """
     kat = (kategori or "G").upper().strip()
     if session_skip_aids is None:
@@ -365,7 +385,7 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
         diag[k] = diag.get(k, 0) + 1
 
     try:
-        # Deteksi dini: sesi habis / dilempar ke login -> ini BUKAN "tabel kosong"
+        # Sesi habis / dilempar ke login -> ini BUKAN "tabel kosong"
         u_now = page.url.lower()
         if "sso.bps.go.id" in u_now or "/login" in u_now:
             diag['error'] = "SESI_LOGIN: halaman Selancar/SSO meminta login ulang"
@@ -374,7 +394,6 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
         try:
             page.wait_for_selector('#tableEvalProfil tbody tr', timeout=15000)
         except Exception as e_wait:
-            # Tabel tidak muncul. Bedakan "memang kosong" vs "gagal memuat"
             try:
                 kosong = page.locator('text="Tidak ada data"').count() > 0
             except Exception:
@@ -385,18 +404,16 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
             diag['error'] = f"TABEL_TIDAK_MUNCUL: {str(e_wait)[:120]}"
             return None
 
-        rows = page.locator('#tableEvalProfil tbody tr').all()
+        rows = page.evaluate(_JS_BACA_BARIS) or []
+        _hitung('hal_dibaca')
         if len(rows) > 1:
             kepala = rows[:8]
             random.shuffle(kepala)   # beberapa akun jalan bersamaan: kurangi rebutan baris yang sama
             rows = kepala + rows[8:]
-        _hitung('hal_dibaca')
-        for tr in rows:
-            sim_btn = tr.locator('.dc-sim-btn').first
-            if sim_btn.count() == 0:
-                continue
-            aid = sim_btn.get_attribute("data-aid")
-            nama = sim_btn.get_attribute("data-nama") or ""
+
+        for r in rows:
+            aid = r['aid']
+            nama = r['nama']
             if not aid:
                 continue
             _hitung('baris_total')
@@ -405,12 +422,9 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 _hitung('skip_sesi_ini')
                 continue
 
-            tl_select = tr.locator('select.dc-tl-select').first
-            stat = tl_select.input_value() or tl_select.get_attribute("data-prev") or ""
-            is_terkunci = tl_select.get_attribute("data-terkunci") == "1"
-
-            if stat in ["sudah_direvisi", "akan_direvisi"] or is_terkunci:
-                if is_terkunci:
+            stat = r['stat']
+            if stat in ["sudah_direvisi", "akan_direvisi"] or r['terkunci']:
+                if r['terkunci']:
                     _hitung('terkunci_user_lain')
                 elif stat == "akan_direvisi":
                     _hitung('akan_direvisi_di_selancar')
@@ -419,14 +433,27 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                 session_skip_aids.add(aid)
                 continue
 
-            # Periksa riwayat status di DB lokal menggunakan (assignment_id, nama_usaha)
+            # Baris yang berulang kali tidak bisa dibuka di akun/komputer ini: jangan dicoba terus di tiap run
+            try:
+                n_gagal = conn.execute(
+                    "SELECT COUNT(*) FROM audit_log WHERE assignment_id = ? "
+                    "AND action IN ('FASIH_ERROR','EXECUTION_FAILED','FASIH_FORBIDDEN') "
+                    "AND timestamp >= datetime('now','-1 day')", (aid,)
+                ).fetchone()[0]
+            except Exception:
+                n_gagal = 0
+            if n_gagal >= 2:
+                _hitung('gagal_dibuka_2x_dalam_24jam')
+                session_skip_aids.add(aid)
+                continue
+
             existing = None
-            if aid and nama:
+            if nama:
                 existing = conn.execute(
                     "SELECT * FROM kasus_nerwana WHERE assignment_id = ? AND nama_usaha = ?",
                     (aid, nama)
                 ).fetchone()
-            if not existing and aid:
+            if not existing:
                 existing = conn.execute(
                     "SELECT * FROM kasus_nerwana WHERE assignment_id = ?",
                     (aid,)
@@ -435,32 +462,22 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
             db_row = None
             if existing:
                 ex_stat = existing['status']
-                # Lewati jika status sudah final (PRD §7.1 & config.STATUS_FINAL)
                 if ex_stat in STATUS_FINAL or ex_stat == 'SUBMITTED':
                     _hitung(f'final_di_db_{ex_stat}')
                     session_skip_aids.add(aid)
                     continue
-                # Jika sudah di-approve di DB dan nilai barunya lengkap, pakai nilai DB
                 if ex_stat == 'APPROVED' and existing['nilai_baru_pbj'] is not None:
                     db_row = dict(existing)
 
-            # B3 fix: Tidak lagi menghitung usulan on-the-fly dari atribut Selancar.
-            # Selancar hanya menjadi antrean. Nilai akan dibaca langsung dari FASIH saat eksekusi.
             if not db_row:
-                link_fasih = sim_btn.get_attribute("data-link") or ""
-                rasio_selancar = to_float(sim_btn.get_attribute("data-rasio"))
-                meta_text = sim_btn.get_attribute("data-meta") or ""
-                data_kunci = tl_select.get_attribute("data-kunci") or ""
-
                 kbli = ""
                 deskripsi_kbli = ""
-                m = re.search(r'KBLI\s*([0-9A-Z]+)\s*-\s*(.+)', meta_text, re.I)
+                m = re.search(r'KBLI\s*([0-9A-Z]+)\s*-\s*(.+)', r['meta'], re.I)
                 if m:
                     kbli = m.group(1).strip()
                     deskripsi_kbli = m.group(2).strip()
                 else:
-                    kbli = meta_text.strip()
-
+                    kbli = r['meta'].strip()
                 db_row = {
                     'assignment_id': aid,
                     'nama_usaha': nama,
@@ -468,13 +485,14 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
                     'kategori': kat,
                     'kbli': kbli,
                     'deskripsi_kbli': deskripsi_kbli,
-                    'link_fasih': link_fasih,
-                    'rasio_selancar': rasio_selancar,
+                    'link_fasih': r['link'],
+                    'rasio_selancar': to_float(r['rasio']),
                     'tindak_lanjut': stat,
-                    'data_kunci': data_kunci,
+                    'data_kunci': r['kunci'],
                     'status': 'PENDING',
                 }
 
+            tr = page.locator('#tableEvalProfil tbody tr').nth(r['i'])
             link_btn = tr.locator('a.dc-link-btn').first
             if link_btn.count() == 0:
                 link_btn = tr.locator('a[href*="assignment"]').first
@@ -482,13 +500,13 @@ def cari_target_di_tabel_selancar(page, conn, session_skip_aids=None, kategori="
             return {
                 'tr': tr,
                 'link_btn': link_btn,
-                'tl_select': tl_select,
+                'tl_select': tr.locator('select.dc-tl-select').first,
                 'aid': aid,
                 'nama': nama,
                 'stat': stat,
-                'data_kunci': tl_select.get_attribute("data-kunci") or "",
+                'data_kunci': r['kunci'],
                 'db_row': db_row,
-                'rasio_selancar': db_row.get('rasio_selancar', to_float(sim_btn.get_attribute("data-rasio"))),
+                'rasio_selancar': db_row.get('rasio_selancar', to_float(r['rasio'])),
             }
     except Exception as e:
         diag['error'] = f"EXCEPTION: {str(e)[:150]}"
@@ -668,7 +686,7 @@ def lanjut_halaman_berikutnya_selancar(page):
                 page.locator('#loading-overlay').wait_for(state="hidden", timeout=10000)
             except Exception:
                 pass
-            time.sleep(2)
+            time.sleep(0.8)
             return True
     except Exception as e:
         print(f"[SELANCAR-WARN] Gagal pindah halaman: {e}")

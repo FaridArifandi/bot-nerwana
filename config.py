@@ -36,7 +36,6 @@ N_INTERAKTIF_AWAL = 10
 # Status yang dianggap FINAL (tidak perlu diproses ulang)
 STATUS_FINAL = frozenset({
     'COMPLETED',
-    'SKIP',
     'NEED_REVIEW',
     'KBLI_MISMATCH',
     'FASIH_FORBIDDEN',
@@ -56,8 +55,8 @@ STATUS_ERROR_TEKNIS = frozenset({
 # ============================================================
 
 # Jeda antar assignment dalam batch (detik, min dan max untuk random)
-JEDA_ANTAR_ASSIGNMENT_MIN = 4.0
-JEDA_ANTAR_ASSIGNMENT_MAX = 7.0
+JEDA_ANTAR_ASSIGNMENT_MIN = 2.0
+JEDA_ANTAR_ASSIGNMENT_MAX = 3.5
 
 # Cooldown WAF (detik)
 WAF_COOLDOWN_SECONDS = 30 * 60  # 30 menit

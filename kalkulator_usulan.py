@@ -36,7 +36,7 @@ class HasilEvaluasi(dict):
         return None
 
 
-def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_selancar: float = None) -> HasilEvaluasi:
+def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_selancar: float = None, multi_field: bool = False) -> HasilEvaluasi:
     """
     Evaluasi nilai FASIH untuk usulan koreksi sesuai Guardrail G1-G8 (PRD §6).
     Fungsi murni tanpa I/O.
@@ -76,6 +76,68 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
     TARGET_RATIO = float(thresh.get('target') or ((MIN_RATIO + MAX_RATIO) / 2.0))
     THRESH_LEVEL = thresh['level']
     THRESH_LABEL = f"{THRESH_LEVEL} [{MIN_RATIO:.2f} - {MAX_RATIO:.2f}]"
+
+    # ---- Kategori G: COGS (Biaya Pembelian / Pendapatan) juga harus masuk rentang KBLI ----
+    c_min, c_max = thresh.get('cogs_min'), thresh.get('cogs_max')
+    cogs_dipakai = (kat == "G" and c_min is not None and c_max is not None)
+    skala_b = max(1, int(nilai.get('bulan_beroperasi') or 1)) if blok == "usaha_2026" else 1
+    alasan_beli = []
+
+    def cogs_ok_setelah(pbj_n, beli_n):
+        """True jika COGS (beli/pbj) masuk rentang, atau COGS tidak berlaku (bukan G / rentang nol)."""
+        if not cogs_dipakai:
+            return True
+        if pbj_n <= 0:
+            return False
+        return c_min <= (beli_n / pbj_n) <= c_max
+
+    def cogs_label():
+        if cogs_dipakai and pbj > 0:
+            return f"COGS {beli / pbj:.4f} [{c_min:.4f} - {c_max:.4f}]"
+        return "COGS tidak dipakai"
+
+    def solusi_beli():
+        """
+        Sesuaikan HANYA Biaya Pembelian (beli) supaya COGS dan NTB/Output sama-sama masuk rentang.
+        Mengembalikan HasilEvaluasi APPLY, atau None (alasan di alasan_beli).
+        """
+        biaya = prod + ops
+        b_lo = max(c_min * pbj, pbj - biaya / max(1e-9, 1.0 - MAX_RATIO), 0.0)
+        b_hi = min(c_max * pbj, pbj - biaya / max(1e-9, 1.0 - MIN_RATIO))
+        if b_lo >= b_hi:
+            alasan_beli.append("Tidak ada nilai Biaya Pembelian yang membuat COGS dan NTB/Output sama-sama dalam rentang.")
+            return None
+        lebar = b_hi - b_lo
+        b0 = min(max(beli, b_lo + 0.1 * lebar), b_hi - 0.1 * lebar)   # perubahan sekecil mungkin, agak ke dalam rentang
+        step = 50_000 if b0 < 1_000_000 else (100_000 if b0 < 10_000_000 else (500_000 if b0 < 50_000_000 else 1_000_000))
+        b_new = float(round(b0 / step) * step)
+        if b_new < b_lo or b_new > b_hi or b_new <= 0:
+            b_new = float(round(b0))
+        out_n = pbj - b_new
+        cogs_n = b_new / pbj
+        r_n = ((out_n - biaya) / out_n) if out_n > 0 else -1.0
+        if not (out_n > 0 and c_min <= cogs_n <= c_max and MIN_RATIO <= r_n <= MAX_RATIO):
+            alasan_beli.append("Penyesuaian Biaya Pembelian tidak lolos verifikasi rentang.")
+            return None
+        if beli > 0 and (b_new > beli * 10 or b_new < beli / 10):
+            alasan_beli.append(f"Perubahan Biaya Pembelian ({int(beli):,} -> {int(b_new):,}) terlalu besar untuk otomatis.")
+            return None
+        if b_new > beli and b_new * skala_b > CAP_NILAI_BARU:
+            alasan_beli.append(f"Biaya Pembelian baru ({int(b_new):,}) melebihi CAP_NILAI_BARU ({CAP_NILAI_BARU:,}).")
+            return None
+        return HasilEvaluasi({
+            'status': 'APPLY',
+            'field': 'beli',
+            'nilai_lama': beli,
+            'nilai_baru': b_new,
+            'rasio_lama': rasio,
+            'rasio_baru': r_n,
+            'alasan': f"Penyesuaian COGS: Biaya Pembelian {int(beli):,} -> {int(b_new):,} | COGS {beli / pbj:.4f} -> {cogs_n:.4f} [{c_min:.4f} - {c_max:.4f}] | NTB/Output {rasio:.4f} -> {r_n:.4f} ({THRESH_LABEL})",
+            'kode_catatan': "#1",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': 'penyesuaian_cogs',
+            'faktor': round(b_new / beli, 2) if beli > 0 else None
+        })
     
     # G7: Kasus khusus semua biaya & pendapatan 0
     if pbj == 0 and prod == 0 and ops == 0 and beli == 0:
@@ -170,7 +232,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                 'faktor': None
             })
 
-        if MIN_RATIO <= r_cand <= MAX_RATIO and pbj_kandidat > 0:
+        if MIN_RATIO <= r_cand <= MAX_RATIO and pbj_kandidat > 0 and cogs_ok_setelah(pbj_kandidat, beli):
             aset_txt = f" & aset tanah {int(aset_tanah):,}" if aset_tanah > 0 else ""
             return HasilEvaluasi({
                 'status': 'APPLY',
@@ -240,105 +302,109 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                 'faktor': None
             })
 
+
+    def _step_wajar(v):
+        return 50_000 if v < 1_000_000 else (100_000 if v < 10_000_000 else (500_000 if v < 50_000_000 else 1_000_000))
+
+    def solusi_gabungan():
+        """
+        Jika mengubah Biaya Pembelian saja tidak cukup (rasio ikut keluar rentang), ubah juga Biaya Produksi
+        sekecil mungkin supaya COGS dan NTB/Output sama-sama masuk rentang. Hanya bila multi_field=True.
+        """
+        if pbj <= 0:
+            return None
+        w = c_max - c_min
+        calon = []
+        for k in range(21):
+            c_t = c_min + 0.05 * w + 0.90 * w * k / 20.0
+            raw = c_t * pbj
+            b_new = float(round(raw / _step_wajar(raw)) * _step_wajar(raw))
+            if b_new < 0 or not (c_min <= b_new / pbj <= c_max):
+                continue
+            out_n = pbj - b_new
+            if out_n <= 0:
+                continue
+            bL = out_n * (1.0 - MAX_RATIO)
+            bH = out_n * (1.0 - MIN_RATIO)
+            if bH <= bL:
+                continue
+            lebar = bH - bL
+            biaya_t = min(max(prod + ops, bL + 0.1 * lebar), bH - 0.1 * lebar)
+            prod_raw = biaya_t - ops
+            if prod_raw < 0:
+                continue
+            prod_n = float(round(prod_raw / _step_wajar(prod_raw)) * _step_wajar(prod_raw)) if prod_raw > 0 else 0.0
+            r_n = (out_n - prod_n - ops) / out_n
+            if not (MIN_RATIO <= r_n <= MAX_RATIO):
+                continue
+            if beli > 0 and (b_new > beli * 10 or b_new < beli / 10):
+                continue
+            if prod > 0 and (prod_n > prod * 10 or prod_n < prod / 10):
+                continue
+            if b_new > beli and b_new * skala_b > CAP_NILAI_BARU:
+                continue
+            if prod_n > prod and prod_n * skala_b > CAP_NILAI_BARU:
+                continue
+            calon.append((abs(b_new - beli) / pbj + abs(prod_n - prod) / pbj, b_new, prod_n, r_n))
+        if not calon:
+            alasan_beli.append("Tidak ada kombinasi Biaya Pembelian + Biaya Produksi yang membuat COGS dan NTB/Output sama-sama dalam rentang.")
+            return None
+        _, b_new, prod_n, r_n = min(calon)
+        tambahan = [{'field': 'prod', 'nilai_lama': prod, 'nilai_baru': prod_n}] if prod_n != prod else []
+        info_prod = f" ; Biaya Produksi {int(prod):,} -> {int(prod_n):,}" if tambahan else ""
+        return HasilEvaluasi({
+            'status': 'APPLY',
+            'field': 'beli',
+            'nilai_lama': beli,
+            'nilai_baru': b_new,
+            'tambahan': tambahan,
+            'rasio_lama': rasio,
+            'rasio_baru': r_n,
+            'alasan': f"Penyesuaian COGS+biaya: Biaya Pembelian {int(beli):,} -> {int(b_new):,}{info_prod} | COGS {beli / pbj:.4f} -> {b_new / pbj:.4f} [{c_min:.4f} - {c_max:.4f}] | NTB/Output {rasio:.4f} -> {r_n:.4f} ({THRESH_LABEL})",
+            'kode_catatan': "#1",
+            'acuan_threshold': THRESH_LABEL,
+            'operasi': 'penyesuaian_cogs_gabungan',
+            'faktor': None
+        })
+
+    def perbaiki_cogs():
+        h = solusi_beli()
+        if h or not multi_field:
+            return h
+        return solusi_gabungan()
+
     # G1: Jika rasio FASIH sudah dalam rentang threshold
     if MIN_RATIO <= rasio <= MAX_RATIO:
-        # Kategori G: periksa juga COGS (Biaya Pembelian / Pendapatan) terhadap rentang KBLI.
-        c_min, c_max = thresh.get('cogs_min'), thresh.get('cogs_max')
-        if kat == "G":
-            if c_min is not None and c_max is not None and pbj > 0:
-                cogs = beli / pbj
-                cogs_label = f"COGS {cogs:.4f} [{c_min:.4f} - {c_max:.4f}]"
-                cogs_ok = (c_min <= cogs <= c_max)
-            else:
-                # Lampiran: "COGS rentang nol - tidak dipakai" -> cukup NTB/Output
-                cogs_label = "COGS tidak dipakai untuk KBLI ini"
-                cogs_ok = True
-            if cogs_ok:
-                # NTB/Output dan COGS sama-sama dalam rentang: tidak ada nilai yang diubah,
-                # tetapi tetap diberi catatan #1 di FASIH dan Selancar ditandai 'sudah direvisi'.
-                return HasilEvaluasi({
-                    'status': 'SKIP',
-                    'catat_saja': True,
-                    'field': None,
-                    'nilai_lama': None,
-                    'nilai_baru': None,
-                    'rasio_lama': rasio,
-                    'rasio_baru': rasio,
-                    'alasan': f"NTB/Output dan COGS sama-sama dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}; {cogs_label}). Hanya catatan #1, tanpa ubah nilai.",
-                    'kode_catatan': "#1",
-                    'acuan_threshold': THRESH_LABEL,
-                    'operasi': None,
-                    'faktor': None
-                })
-            # COGS di luar rentang: sesuaikan Biaya Pembelian (beli) supaya COGS masuk rentang
-            # TANPA membuat NTB/Output keluar rentang.
-            import math
-
-            def _review_cogs(msg):
-                return HasilEvaluasi({
-                    'status': 'NEED_REVIEW',
-                    'field': None,
-                    'nilai_lama': None,
-                    'nilai_baru': None,
-                    'rasio_lama': rasio,
-                    'rasio_baru': None,
-                    'alasan': f"NTB/Output dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}) tetapi {cogs_label} di luar rentang. {msg}",
-                    'kode_catatan': "",
-                    'acuan_threshold': THRESH_LABEL,
-                    'operasi': None,
-                    'faktor': None
-                })
-
-            if beli <= 0:
-                return _review_cogs("Biaya Pembelian 0, tidak dikarang otomatis (G4).")
-
-            skala_b = max(1, int(nilai.get('bulan_beroperasi') or 1)) if blok == "usaha_2026" else 1
-            biaya = prod + ops
-            # Batas beli agar rasio NTB/Output tetap dalam rentang: pbj-beli ∈ [biaya/(1-MIN), biaya/(1-MAX)]
-            b_lo = max(c_min * pbj, pbj - biaya / max(1e-9, 1.0 - MAX_RATIO), 0.0)
-            b_hi = min(c_max * pbj, pbj - biaya / max(1e-9, 1.0 - MIN_RATIO))
-            if b_lo >= b_hi:
-                return _review_cogs("Tidak ada nilai Biaya Pembelian yang membuat COGS dan NTB/Output sama-sama dalam rentang.")
-
-            lebar = b_hi - b_lo
-            b0 = min(max(beli, b_lo + 0.1 * lebar), b_hi - 0.1 * lebar)   # perubahan sekecil mungkin, agak ke dalam rentang
-            step = 50_000 if b0 < 1_000_000 else (100_000 if b0 < 10_000_000 else (500_000 if b0 < 50_000_000 else 1_000_000))
-            b_new = float(round(b0 / step) * step)
-            if b_new < b_lo or b_new > b_hi or b_new <= 0:
-                b_new = float(round(b0))
-
-            out_n = pbj - b_new
-            cogs_n = b_new / pbj
-            r_n = ((out_n - biaya) / out_n) if out_n > 0 else -1.0
-            if not (out_n > 0 and c_min <= cogs_n <= c_max and MIN_RATIO <= r_n <= MAX_RATIO):
-                return _review_cogs("Penyesuaian Biaya Pembelian tidak lolos verifikasi rentang.")
-            if b_new > beli * 10 or b_new < beli / 10:
-                return _review_cogs(f"Perubahan Biaya Pembelian ({int(beli):,} -> {int(b_new):,}) terlalu besar untuk otomatis.")
-            if b_new > beli and b_new * skala_b > CAP_NILAI_BARU:
-                return _review_cogs(f"Biaya Pembelian baru ({int(b_new):,}) melebihi CAP_NILAI_BARU ({CAP_NILAI_BARU:,}).")
-
+        if cogs_dipakai and not cogs_ok_setelah(pbj, beli):
+            # NTB/Output benar, COGS di luar rentang -> sesuaikan Biaya Pembelian
+            h_beli = perbaiki_cogs()
+            if h_beli:
+                return h_beli
             return HasilEvaluasi({
-                'status': 'APPLY',
-                'field': 'beli',
-                'nilai_lama': beli,
-                'nilai_baru': b_new,
+                'status': 'NEED_REVIEW',
+                'field': None,
+                'nilai_lama': None,
+                'nilai_baru': None,
                 'rasio_lama': rasio,
-                'rasio_baru': r_n,
-                'alasan': f"Penyesuaian COGS: Biaya Pembelian {int(beli):,} -> {int(b_new):,} | COGS {beli / pbj:.4f} -> {cogs_n:.4f} [{c_min:.4f} - {c_max:.4f}] | NTB/Output {rasio:.4f} -> {r_n:.4f} ({THRESH_LABEL})",
-                'kode_catatan': "#1",
+                'rasio_baru': None,
+                'alasan': f"NTB/Output dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}) tetapi {cogs_label()} di luar rentang. {alasan_beli[-1] if alasan_beli else ''}",
+                'kode_catatan': "",
                 'acuan_threshold': THRESH_LABEL,
-                'operasi': 'penyesuaian_cogs',
-                'faktor': round(b_new / beli, 2)
+                'operasi': None,
+                'faktor': None
             })
+        # Semua yang dicek sudah benar: tidak ada nilai yang diubah, cukup catatan #1 + Selancar 'sudah direvisi'
+        ket = f"; {cogs_label()}" if kat == "G" else ""
         return HasilEvaluasi({
             'status': 'SKIP',
+            'catat_saja': True,
             'field': None,
             'nilai_lama': None,
             'nilai_baru': None,
             'rasio_lama': rasio,
             'rasio_baru': rasio,
-            'alasan': f"Sudah dalam rentang threshold {THRESH_LABEL} (rasio: {rasio:.4f}). Tidak perlu perbaikan.",
-            'kode_catatan': "",
+            'alasan': f"Sudah dalam rentang {THRESH_LABEL} (rasio: {rasio:.4f}{ket}). Hanya catatan #1, tanpa ubah nilai.",
+            'kode_catatan': "#1",
             'acuan_threshold': THRESH_LABEL,
             'operasi': None,
             'faktor': None
@@ -370,7 +436,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
         if cand_out > 0:
             cand_ntb = cand_out - cand_prod - cand_ops
             cand_r = cand_ntb / cand_out
-            if MIN_RATIO <= cand_r <= MAX_RATIO:
+            if MIN_RATIO <= cand_r <= MAX_RATIO and cogs_ok_setelah(cand_pbj, cand_beli):
                 # G6 & Tugas 7: Cap nilai baru untuk field yang DINAIKKAN
                 # Harus dibandingkan pada skala yang sama dengan Selancar (tahunan)
                 val_skala_selancar = new_val_kali * skala_faktor
@@ -405,7 +471,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
             if cand_out > 0:
                 cand_ntb = cand_out - cand_prod - cand_ops
                 cand_r = cand_ntb / cand_out
-                if MIN_RATIO <= cand_r <= MAX_RATIO:
+                if MIN_RATIO <= cand_r <= MAX_RATIO and cogs_ok_setelah(cand_pbj, cand_beli):
                     valid_candidates.append({
                         'field': f,
                         'operasi': ':10',
@@ -464,7 +530,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
             if prod_bulat <= batas_atas_prod and (prod < 50_000_000 and prod_bulat < 100_000_000) and (prod_bulat * skala_faktor <= CAP_NILAI_BARU):
                 ntb_c = output - prod_bulat - ops
                 r_c = ntb_c / output
-                if MIN_RATIO <= r_c <= MAX_RATIO:
+                if MIN_RATIO <= r_c <= MAX_RATIO and cogs_ok_setelah(pbj, beli):
                     kandidat_wajar.append({
                         'field': 'prod',
                         'nilai_lama': prod,
@@ -477,7 +543,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                 if ops_bulat <= max(ops * 6.0, 1_000_000) and (ops < 50_000_000 and ops_bulat < 100_000_000) and (ops_bulat * skala_faktor <= CAP_NILAI_BARU):
                     ntb_c = output - prod - ops_bulat
                     r_c = ntb_c / output
-                    if MIN_RATIO <= r_c <= MAX_RATIO:
+                    if MIN_RATIO <= r_c <= MAX_RATIO and cogs_ok_setelah(pbj, beli):
                         kandidat_wajar.append({
                             'field': 'ops',
                             'nilai_lama': ops,
@@ -496,7 +562,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                 if 0 < prod_bulat < prod and (prod_bulat * skala_faktor <= CAP_NILAI_BARU):
                     ntb_c = output - prod_bulat - ops
                     r_c = ntb_c / output
-                    if MIN_RATIO <= r_c <= MAX_RATIO:
+                    if MIN_RATIO <= r_c <= MAX_RATIO and cogs_ok_setelah(pbj, beli):
                         kandidat_wajar.append({
                             'field': 'prod',
                             'nilai_lama': prod,
@@ -512,7 +578,7 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                     if out_c > 0:
                         ntb_c = out_c - biaya_saat_ini
                         r_c = ntb_c / out_c
-                        if MIN_RATIO <= r_c <= MAX_RATIO:
+                        if MIN_RATIO <= r_c <= MAX_RATIO and cogs_ok_setelah(pbj_bulat, beli):
                             kandidat_wajar.append({
                                 'field': 'pbj',
                                 'nilai_lama': pbj,
@@ -536,6 +602,11 @@ def evaluasi(nilai: dict, kategori: str, kbli: str, blok: str = "biasa", rasio_s
                 'operasi': 'penyesuaian_wajar',
                 'faktor': f_val
             })
+
+        if cogs_dipakai:
+            h_beli = perbaiki_cogs()
+            if h_beli:
+                return h_beli
 
         if cap_exceeded_candidates:
             c_cap = cap_exceeded_candidates[0]

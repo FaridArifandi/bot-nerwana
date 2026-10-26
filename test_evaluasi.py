@@ -25,7 +25,7 @@ class TestEvaluasi(unittest.TestCase):
         self.assertIsNone(res['field'])
         self.assertIsNone(res['nilai_baru'])
         self.assertAlmostEqual(res['rasio_lama'], 0.75, places=2)
-        self.assertIn("Sudah dalam rentang threshold", res['alasan'])
+        self.assertIn("Sudah dalam rentang", res['alasan'])
 
     def test_case_2_salah_nol_pbj_apply(self):
         """
@@ -188,7 +188,7 @@ class TestEvaluasi(unittest.TestCase):
         
         self.assertEqual(res['status'], 'SKIP')
         self.assertIsNone(res['field'])
-        self.assertIn("Sudah dalam rentang threshold", res['alasan'])
+        self.assertIn("Sudah dalam rentang", res['alasan'])
 
     def test_tugas_7_blok_2026_cap_skala_tahunan_exceeded(self):
         """
