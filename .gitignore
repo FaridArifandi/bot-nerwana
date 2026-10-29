@@ -47,3 +47,8 @@ env/
 .mesin_id
 *.bak_*
 *.bat.bak_*
+
+# Hasil cek remark #0 (lokal per komputer)
+hasil_cek_remark0.json
+hasil_cek_remark0.json.tmp
+hasil_cek_remark0.csv

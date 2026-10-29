@@ -2622,9 +2622,10 @@ def main():
     print("  [1] Data Cleaning Reguler (DC Terkena Flag - Baris Belum Direvisi) [Default]")
     print("  [2] Inkonsistensi Sosek (sosek_33 - Verifikasi NIK 6 Digit Kembar)")
     print("  [3] Verifikasi & Re-Submit Kasus 'Farid Akbar Arifandi' (Cek Remark & Nilai FASIH)")
+    print("  [4] Cek Ulang 'Sesuai Lapangan' - Pastikan Remark #0 di Isian 27a/31a (Flag 3, Semua Kategori)")
     print("  [0] Keluar")
     print("=" * 65)
-    pilih_modul = input("\nMasukkan pilihan tugas [1/2/3/0] (default 1): ").strip() or "1"
+    pilih_modul = input("\nMasukkan pilihan tugas [1/2/3/4/0] (default 1): ").strip() or "1"
 
     if pilih_modul == "2":
         from eksekutor_sosek import main as main_sosek
@@ -2632,6 +2633,10 @@ def main():
         return
     elif pilih_modul == "3":
         main_verifikasi_farid()
+        return
+    elif pilih_modul == "4":
+        from cek_remark0 import main_cek_remark0
+        main_cek_remark0(sys.modules[__name__])
         return
     elif pilih_modul == "0":
         print("[INFO] Program selesai.")
