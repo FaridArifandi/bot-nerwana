@@ -1558,6 +1558,41 @@ def submit_assignment(page, max_retries=2):
                 except Exception:
                     pass
 
+        # Opsi C (cadangan): tombol Kirim bukan <button> biasa (mis. <a>/<div role=button>) - cari lewat teks / role
+        if not klik_kirim_sukses:
+            try:
+                kandidat = page.get_by_text("Kirim", exact=True)
+                for ci in range(kandidat.count()):
+                    el = kandidat.nth(ci)
+                    if el.is_visible():
+                        print("[FASIH] Menemukan tombol Kirim lewat teks (cadangan). Mengklik...")
+                        el.click()
+                        klik_kirim_sukses = True
+                        break
+            except Exception:
+                pass
+        if not klik_kirim_sukses:
+            try:
+                kandidat = page.get_by_role("button", name=re.compile(r"kirim", re.I))
+                for ci in range(kandidat.count()):
+                    el = kandidat.nth(ci)
+                    if el.is_visible():
+                        print("[FASIH] Menemukan tombol Kirim lewat role=button (cadangan). Mengklik...")
+                        el.click()
+                        klik_kirim_sukses = True
+                        break
+            except Exception:
+                pass
+        if not klik_kirim_sukses:
+            # Diagnosa: tampilkan teks elemen klik yang terlihat + screenshot
+            try:
+                teks_btn = page.evaluate("() => Array.from(document.querySelectorAll('button, a, [role=button]')).filter(e => e.offsetParent !== null).map(e => (e.innerText || e.getAttribute('aria-label') || '').trim()).filter(t => t).slice(0, 40)")
+                print(f"[DIAGNOSA] Elemen klik terlihat: {teks_btn}")
+                ss_k = os.path.join(SCREENSHOTS_DIR, f"KIRIM_TIDAK_ADA_{int(time.time())}.png")
+                page.screenshot(path=ss_k, timeout=5000)
+                print(f"[DIAGNOSA] Screenshot: {ss_k}")
+            except Exception:
+                pass
         if not klik_kirim_sukses:
             print("[ERROR] Tombol Kirim tidak ditemukan di navbar maupun di kanan bawah.")
             if attempt == max_retries:
@@ -2621,20 +2656,16 @@ def main():
     print("PILIH TUGAS / MODUL BOT:")
     print("  [1] Data Cleaning Reguler (DC Terkena Flag - Baris Belum Direvisi) [Default]")
     print("  [2] Inkonsistensi Sosek (sosek_33 - Verifikasi NIK 6 Digit Kembar)")
-    print("  [3] Verifikasi & Re-Submit Kasus 'Farid Akbar Arifandi' (Cek Remark & Nilai FASIH)")
-    print("  [4] Cek Ulang 'Sesuai Lapangan' - Pastikan Remark #0 di Isian 27a/31a (Flag 3, Semua Kategori)")
+    print("  [3] Cek Ulang DC (Semua Punya Semua Orang: Sesuai Lapangan -> #0, Sudah Direvisi -> Cek Range + #1)")
     print("  [0] Keluar")
     print("=" * 65)
-    pilih_modul = input("\nMasukkan pilihan tugas [1/2/3/4/0] (default 1): ").strip() or "1"
+    pilih_modul = input("\nMasukkan pilihan tugas [1/2/3/0] (default 1): ").strip() or "1"
 
     if pilih_modul == "2":
         from eksekutor_sosek import main as main_sosek
         main_sosek()
         return
     elif pilih_modul == "3":
-        main_verifikasi_farid()
-        return
-    elif pilih_modul == "4":
         from cek_remark0 import main_cek_remark0
         main_cek_remark0(sys.modules[__name__])
         return

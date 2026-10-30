@@ -1,5 +1,5 @@
 @echo off
-title Eksekutor FASIH & Bot Nerwana
+title Eksekutor FASIH ^& Bot Nerwana
 cd /d "%~dp0"
 
 echo =================================================================
